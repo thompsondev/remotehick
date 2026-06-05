@@ -99,6 +99,10 @@ async function bootstrap() {
     }),
   );
 
+  expressApp.get('/agent/download', (_req, res) => {
+    res.redirect(302, '/v1/agent/download');
+  });
+
   const swaggerOptions = new DocumentBuilder()
     .setTitle(`${platform} API`)
     .setDescription(`API Documentation for ${platform} API`)
@@ -116,6 +120,7 @@ async function bootstrap() {
     .addTag('Devices', 'Device registry and enrollment')
     .addTag('Enrollment', 'Enrollment link management')
     .addTag('Sessions', 'Remote session management')
+    .addTag('Agent', 'Windows agent installer download')
     .build();
 
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerOptions);

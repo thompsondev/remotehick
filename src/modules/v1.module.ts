@@ -5,6 +5,7 @@ import { DeviceModule } from './device/device.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { SessionModule } from './session/session.module';
 import { SignalingModule } from './signaling/signaling.module';
+import { AgentModule } from './agent/agent.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SignalingModule } from './signaling/signaling.module';
     EnrollmentModule,
     SessionModule,
     SignalingModule,
+    AgentModule,
   ],
 })
 export class V1Module {}

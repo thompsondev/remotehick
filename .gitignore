@@ -56,3 +56,7 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
+
+# Built agent installers (generate locally with pnpm copy:agent)
+/public/agents/*.zip
+/public/agents/*.exe

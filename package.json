@@ -19,6 +19,7 @@
     "prisma:prod": "pnpm prisma db pull && pnpm prisma migrate deploy && pnpm prisma generate && pnpm prisma studio",
     "prisma:studio": "pnpm prisma studio",
     "seed:admin": "node scripts/seed-admin.mjs",
+    "copy:agent": "node scripts/copy-agent-installer.mjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
