@@ -44,15 +44,47 @@ if (fs.existsSync(zipTarget)) {
 }
 
 const zipSource = path.resolve(unpackedDir);
+const excludedNames = new Set([
+  'locales',
+  'LICENSES.chromium.html',
+  'vk_swiftshader.dll',
+  'vk_swiftshader_icd.json',
+  'd3dcompiler_47.dll',
+  'vulkan-1.dll',
+  'libEGL.dll',
+  'icudtl.dat',
+]);
+
 if (process.platform === 'win32') {
+  const stagingDir = path.join(outDir, '_win-unpacked-slim');
+  if (fs.existsSync(stagingDir)) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(stagingDir, { recursive: true });
+
+  for (const entry of fs.readdirSync(zipSource)) {
+    if (excludedNames.has(entry)) continue;
+    execSync(
+      `powershell -NoProfile -Command "Copy-Item -Path '${path.join(zipSource, entry)}' -Destination '${stagingDir}' -Recurse -Force"`,
+      { stdio: 'inherit' },
+    );
+  }
+
   execSync(
-    `powershell -NoProfile -Command "Compress-Archive -Path '${zipSource}\\*' -DestinationPath '${zipTarget}' -Force"`,
+    `powershell -NoProfile -Command "Compress-Archive -Path '${stagingDir}\\*' -DestinationPath '${zipTarget}' -Force"`,
     { stdio: 'inherit' },
   );
+  fs.rmSync(stagingDir, { recursive: true, force: true });
 } else {
-  execSync(`cd "${zipSource}" && zip -r "${zipTarget}" .`, {
+  const includeArgs = fs
+    .readdirSync(zipSource)
+    .filter((entry) => !excludedNames.has(entry))
+    .map((entry) => `"${entry}"`)
+    .join(' ');
+  execSync(`cd "${zipSource}" && zip -r "${zipTarget}" ${includeArgs}`, {
     stdio: 'inherit',
   });
 }
 
-console.log(`Packaged ${unpackedDir} -> ${zipTarget}`);
+const sizeMb = (fs.statSync(zipTarget).size / (1024 * 1024)).toFixed(1);
+console.log(`Packaged slim agent (${sizeMb} MB) -> ${zipTarget}`);

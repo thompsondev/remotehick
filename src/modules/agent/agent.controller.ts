@@ -19,16 +19,36 @@ export class AgentController {
   @ApiOperation({
     summary: 'Download Windows agent installer',
     description:
-      'Serves the packaged Remote Agent installer for enrollment on Windows PCs.',
+      'Redirects to the Cloudinary-hosted Remote Agent installer, or serves a local build in development.',
   })
   @ApiProduces('application/octet-stream')
   @ApiResponse({ status: 200, description: 'Installer file download' })
   @ApiResponse({
-    status: 404,
-    description: 'Installer has not been built or copied to the server yet',
+    status: 302,
+    description: 'Redirect to AGENT_DOWNLOAD_URL when configured',
   })
-  download(@Res() res: Response): void {
-    const { filePath, downloadName } = this.agentService.resolveInstallerPath();
-    res.download(filePath, downloadName);
+  @ApiResponse({
+    status: 404,
+    description: 'No local installer and no AGENT_DOWNLOAD_URL configured',
+  })
+  async download(@Res() res: Response): Promise<void> {
+    const target = await this.agentService.resolveDownloadTarget();
+
+    if (target.kind === 'redirect') {
+      res.redirect(302, target.url);
+      return;
+    }
+
+    if (target.kind === 'stream') {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${target.downloadName}"`,
+      );
+      target.stream.pipe(res);
+      return;
+    }
+
+    res.download(target.filePath, target.downloadName);
   }
 }
