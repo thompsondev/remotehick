@@ -38,7 +38,11 @@ export class OpenAccessPromptLimitGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    const ip = (request.ip || request.socket?.remoteAddress || 'unknown').trim();
+    const ip = (
+      request.ip ||
+      request.socket?.remoteAddress ||
+      'unknown'
+    ).trim();
     const host = (request.get('Host') || '').split(':')[0].toLowerCase();
     if (!domainChatSet.has(host)) {
       return true;

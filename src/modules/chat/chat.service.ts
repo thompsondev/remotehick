@@ -161,7 +161,9 @@ export class ChatService {
       return;
     }
     if (event.type !== 'app_mention' && event.type !== 'message') {
-      this.logger.debug(`[Slack] Ignoring unsupported event type: ${event.type}`);
+      this.logger.debug(
+        `[Slack] Ignoring unsupported event type: ${event.type}`,
+      );
       return;
     }
 
@@ -181,7 +183,9 @@ export class ChatService {
       .trim();
 
     if (!userText) {
-      this.logger.debug('[Slack] Empty user text after stripping mentions, skipping');
+      this.logger.debug(
+        '[Slack] Empty user text after stripping mentions, skipping',
+      );
       return;
     }
 
