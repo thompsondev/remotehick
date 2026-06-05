@@ -5,6 +5,7 @@ import * as moment from 'moment-timezone';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import * as express from 'express';
+import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
@@ -56,6 +57,7 @@ async function bootstrap() {
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  app.use(cookieParser());
 
   const expressApp = app.getHttpAdapter().getInstance() as express.Application;
   expressApp.use(express.static('public'));
@@ -110,6 +112,10 @@ async function bootstrap() {
     )
     .addTag('Server', 'Endpoint for Server functions')
     .addTag('Chat', 'Endpoint for Chat functions')
+    .addTag('Auth', 'Admin authentication')
+    .addTag('Devices', 'Device registry and enrollment')
+    .addTag('Enrollment', 'Enrollment link management')
+    .addTag('Sessions', 'Remote session management')
     .build();
 
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerOptions);

@@ -1,0 +1,167 @@
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import { Logger, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Server, Socket } from 'socket.io';
+import { SignalingService } from './signaling.service';
+import { DeviceService } from '../device/device.service';
+import { PrismaService } from '../../lib/prisma/prisma.service';
+import { hashToken } from '../../middleware/helpers/tokens';
+import type { AdminPayload } from '../../middleware/decorators/remote.decorator';
+
+interface AuthPayload {
+  role: 'admin' | 'device';
+  adminId?: string;
+  deviceId?: string;
+  token?: string;
+}
+
+@WebSocketGateway({
+  namespace: '/signaling',
+  cors: { origin: true, credentials: true },
+})
+export class SignalingGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
+  @WebSocketServer()
+  server: Server;
+
+  private readonly logger = new Logger(SignalingGateway.name);
+
+  constructor(
+    private readonly signaling: SignalingService,
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly deviceService: DeviceService,
+  ) {
+    this.signaling.setGateway({
+      emitToSocket: (socketId, event, data) => {
+        this.server.to(socketId).emit(event, data);
+      },
+      emitToRoom: (room, event, data) => {
+        this.server.to(room).emit(event, data);
+      },
+    });
+  }
+
+  async handleConnection(client: Socket) {
+    try {
+      const auth = client.handshake.auth as AuthPayload;
+      if (auth?.role === 'admin' && auth.token) {
+        const payload = this.jwtService.verify<AdminPayload>(auth.token);
+        client.data.role = 'admin';
+        client.data.adminId = payload.sub;
+        this.signaling.registerAdminSocket(payload.sub, client.id);
+        return;
+      }
+
+      if (auth?.role === 'device' && auth.token && auth.deviceId) {
+        const device = await this.prisma.device.findFirst({
+          where: {
+            id: auth.deviceId,
+            deviceTokenHash: hashToken(auth.token),
+            revokedAt: null,
+          },
+        });
+        if (!device) throw new UnauthorizedException();
+        client.data.role = 'device';
+        client.data.deviceId = device.id;
+        this.signaling.registerDeviceSocket(device.id, client.id);
+        await client.join(`device:${device.id}`);
+        return;
+      }
+
+      client.disconnect();
+    } catch (err) {
+      this.logger.warn(`WS auth failed: ${err}`);
+      client.disconnect();
+    }
+  }
+
+  handleDisconnect(client: Socket) {
+    const role = client.data.role as 'admin' | 'device' | undefined;
+    const id = (client.data.adminId || client.data.deviceId) as
+      | string
+      | undefined;
+    if (role && id) {
+      this.signaling.unregisterSocket(client.id, role, id);
+      if (role === 'device') {
+        void this.deviceService.markOffline(id);
+      }
+    }
+  }
+
+  @SubscribeMessage('join_session')
+  handleJoinSession(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    void client.join(`session:${data.sessionId}`);
+    return { joined: data.sessionId };
+  }
+
+  @SubscribeMessage('session_accept')
+  handleSessionAccept(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    if (client.data.role !== 'device') return;
+    this.signaling.acceptSession(data.sessionId);
+    void client.join(`session:${data.sessionId}`);
+    return { accepted: true };
+  }
+
+  @SubscribeMessage('webrtc_offer')
+  handleOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: { sessionId: string; offer: unknown },
+  ) {
+    this.signaling.relayToSession(data.sessionId, 'webrtc_offer', {
+      from: client.data.role,
+      offer: data.offer,
+    });
+  }
+
+  @SubscribeMessage('webrtc_answer')
+  handleAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: { sessionId: string; answer: unknown },
+  ) {
+    this.signaling.relayToSession(data.sessionId, 'webrtc_answer', {
+      from: client.data.role,
+      answer: data.answer,
+    });
+  }
+
+  @SubscribeMessage('webrtc_ice')
+  handleIce(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: { sessionId: string; candidate: unknown },
+  ) {
+    this.signaling.relayToSession(data.sessionId, 'webrtc_ice', {
+      from: client.data.role,
+      candidate: data.candidate,
+    });
+  }
+
+  @SubscribeMessage('data_channel_message')
+  handleDataChannel(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; message: unknown },
+  ) {
+    this.signaling.relayToSession(data.sessionId, 'data_channel_message', {
+      from: client.data.role,
+      message: data.message,
+    });
+  }
+}
