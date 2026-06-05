@@ -18,15 +18,40 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const count = await this.prisma.admin.count();
-    if (count === 0) {
-      const email =
-        this.config.get<string>('ADMIN_EMAIL') || 'admin@example.com';
-      const password = this.config.get<string>('ADMIN_PASSWORD') || 'admin123';
-      const passwordHash = await bcrypt.hash(password, 10);
-      await this.prisma.admin.create({
+    await this.seedDefaultAdmin();
+  }
+
+  private async seedDefaultAdmin() {
+    const email = (
+      this.config.get<string>('ADMIN_EMAIL') || 'admin@example.com'
+    ).toLowerCase();
+    const password = this.config.get<string>('ADMIN_PASSWORD') || 'admin123';
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const existing = await this.prisma.admin.findUnique({ where: { email } });
+    if (existing) {
+      await this.prisma.admin.update({
+        where: { id: existing.id },
+        data: { passwordHash },
+      });
+      return;
+    }
+
+    const legacy = await this.prisma.admin.findUnique({
+      where: { email: 'admin@localhost' },
+    });
+    if (legacy) {
+      await this.prisma.admin.update({
+        where: { id: legacy.id },
         data: { email, passwordHash },
       });
+      console.log(`Default admin migrated to ${email}`);
+      return;
+    }
+
+    const count = await this.prisma.admin.count();
+    if (count === 0) {
+      await this.prisma.admin.create({ data: { email, passwordHash } });
       console.log(`Default admin created: ${email}`);
     }
   }
