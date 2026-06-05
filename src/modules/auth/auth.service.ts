@@ -20,7 +20,8 @@ export class AuthService implements OnModuleInit {
   async onModuleInit() {
     const count = await this.prisma.admin.count();
     if (count === 0) {
-      const email = this.config.get<string>('ADMIN_EMAIL') || 'admin@localhost';
+      const email =
+        this.config.get<string>('ADMIN_EMAIL') || 'admin@example.com';
       const password = this.config.get<string>('ADMIN_PASSWORD') || 'admin123';
       const passwordHash = await bcrypt.hash(password, 10);
       await this.prisma.admin.create({

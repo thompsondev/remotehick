@@ -5,7 +5,7 @@ import * as moment from 'moment-timezone';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import * as express from 'express';
-import cookieParser from 'cookie-parser';
+import * as cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
