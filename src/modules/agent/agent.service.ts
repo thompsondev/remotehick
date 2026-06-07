@@ -23,6 +23,16 @@ export class AgentService {
       return { kind: 'redirect', url: externalUrl };
     }
 
+    const driveFileId = this.config
+      .get<string>('GOOGLE_DRIVE_AGENT_FILE_ID')
+      ?.trim();
+    if (driveFileId) {
+      return {
+        kind: 'redirect',
+        url: `https://drive.google.com/uc?export=download&id=${driveFileId}`,
+      };
+    }
+
     const cloudinaryUrl = this.cloudinary.getAgentDownloadUrl();
     if (cloudinaryUrl) {
       return { kind: 'redirect', url: cloudinaryUrl };
@@ -86,7 +96,7 @@ export class AgentService {
     }
 
     throw new NotFoundException(
-      'Windows agent installer is not available. Run pnpm upload:agent after building the agent, or copy a local build with pnpm copy:agent',
+      'Windows agent installer is not available. Run pnpm upload:agent after building the agent, configure Google Drive credentials, or copy a local build with pnpm copy:agent',
     );
   }
 }

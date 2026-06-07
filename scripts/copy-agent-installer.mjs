@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
 
@@ -56,25 +57,47 @@ const excludedNames = new Set([
 ]);
 
 if (process.platform === 'win32') {
-  const stagingDir = path.join(outDir, '_win-unpacked-slim');
-  if (fs.existsSync(stagingDir)) {
-    fs.rmSync(stagingDir, { recursive: true, force: true });
-  }
+  const stagingDir = path.join(os.tmpdir(), `remote-agent-slim-${Date.now()}`);
   fs.mkdirSync(stagingDir, { recursive: true });
 
-  for (const entry of fs.readdirSync(zipSource)) {
-    if (excludedNames.has(entry)) continue;
+  try {
+    for (const entry of fs.readdirSync(zipSource)) {
+      if (excludedNames.has(entry)) continue;
+      const sourcePath = path.join(zipSource, entry);
+      const destPath = path.join(stagingDir, entry);
+      if (fs.statSync(sourcePath).isDirectory()) {
+        fs.mkdirSync(destPath, { recursive: true });
+        try {
+          execSync(
+            `robocopy "${sourcePath}" "${destPath}" /E /NFL /NDL /NJH /NJS /nc /ns /np`,
+            { stdio: 'inherit' },
+          );
+        } catch (error) {
+          const code = error?.status;
+          if (code == null || code > 7) {
+            throw error;
+          }
+        }
+      } else {
+        fs.copyFileSync(sourcePath, destPath);
+      }
+    }
+
+    if (fs.existsSync(zipTarget)) {
+      fs.unlinkSync(zipTarget);
+    }
+
     execSync(
-      `powershell -NoProfile -Command "Copy-Item -Path '${path.join(zipSource, entry)}' -Destination '${stagingDir}' -Recurse -Force"`,
+      `powershell -NoProfile -Command "Compress-Archive -Path '${stagingDir}\\*' -DestinationPath '${zipTarget}' -Force"`,
       { stdio: 'inherit' },
     );
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    fs.rmSync(path.join(outDir, '_win-unpacked-slim'), {
+      recursive: true,
+      force: true,
+    });
   }
-
-  execSync(
-    `powershell -NoProfile -Command "Compress-Archive -Path '${stagingDir}\\*' -DestinationPath '${zipTarget}' -Force"`,
-    { stdio: 'inherit' },
-  );
-  fs.rmSync(stagingDir, { recursive: true, force: true });
 } else {
   const includeArgs = fs
     .readdirSync(zipSource)
