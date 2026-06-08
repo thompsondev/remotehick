@@ -10,6 +10,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import { AllExceptionsFilter } from './middleware';
+import { buildCorsOptions } from './middleware/helpers/cors';
 import { CustomLoggerService } from './lib/loggger/logger.service';
 
 async function bootstrap() {
@@ -83,13 +84,9 @@ async function bootstrap() {
     }),
   );
 
-  const allowedOrigins = [/^http:\/\/localhost:\d+$/];
-  app.enableCors({
-    origin: allowedOrigins,
-    credentials: true,
-    optionsSuccessStatus: 200,
-    methods: 'GET,PATCH,POST,PUT,DELETE,OPTIONS',
-  });
+  const { options: corsOptions, allowedOrigins } =
+    buildCorsOptions(configService);
+  app.enableCors(corsOptions);
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -151,6 +148,9 @@ async function bootstrap() {
     );
     console.log(`Unlimited prompts: ${unlimitedPrompts}`);
     console.log(`Copyright: ${authorName ? 'enabled' : 'disabled'}`);
+    console.log(
+      `CORS origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : '(localhost only)'}`,
+    );
   } catch (err) {
     console.error('Error starting server', err);
   }
