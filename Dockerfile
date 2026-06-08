@@ -33,4 +33,4 @@ ENV HOST=0.0.0.0
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT}/v1" || exit 1
 
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]

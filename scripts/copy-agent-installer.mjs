@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
+import { loadEnv } from './lib/env-utils.mjs';
 
 const releaseDir = path.resolve('../remoteagent/release');
 const outDir = path.resolve('public/agents');
@@ -50,10 +51,6 @@ const excludedNames = new Set([
   'LICENSES.chromium.html',
   'vk_swiftshader.dll',
   'vk_swiftshader_icd.json',
-  'd3dcompiler_47.dll',
-  'vulkan-1.dll',
-  'libEGL.dll',
-  'icudtl.dat',
 ]);
 
 if (process.platform === 'win32') {
@@ -82,6 +79,21 @@ if (process.platform === 'win32') {
         fs.copyFileSync(sourcePath, destPath);
       }
     }
+
+    const env = loadEnv('.env');
+    const platformUrl = (env.PLATFORM_URL || '').replace(/\/$/, '');
+    const apiUrl =
+      env.AGENT_API_URL ||
+      (platformUrl
+        ? `${platformUrl}/v1`
+        : 'https://dev.digitalcoresystem.com/v1');
+    const wsUrl =
+      env.AGENT_WS_URL || platformUrl || 'https://dev.digitalcoresystem.com';
+    fs.writeFileSync(
+      path.join(stagingDir, 'remote-agent-config.json'),
+      JSON.stringify({ apiUrl, wsUrl }, null, 2),
+      'utf8',
+    );
 
     if (fs.existsSync(zipTarget)) {
       fs.unlinkSync(zipTarget);

@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { generateEnrollmentCode } from '../../middleware/helpers/tokens';
+import { EnrollmentTrackingService } from './enrollment-tracking.service';
 
 @Injectable()
 export class EnrollmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly tracking: EnrollmentTrackingService,
   ) {}
 
   async createLink(adminId: string) {
@@ -33,7 +35,7 @@ export class EnrollmentService {
   }
 
   async listLinks(adminId: string) {
-    return this.prisma.enrollmentLink.findMany({
+    const links = await this.prisma.enrollmentLink.findMany({
       where: { createdByAdminId: adminId },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -42,6 +44,22 @@ export class EnrollmentService {
         },
       },
     });
+
+    const stats = await this.tracking.getStatsForLinks(
+      links.map((link) => link.id),
+    );
+
+    return links.map((link) => ({
+      ...link,
+      stats: stats.get(link.id) ?? {
+        openCount: 0,
+        uniqueOpenCount: 0,
+        downloadCount: 0,
+        uniqueDownloadCount: 0,
+        lastOpenedAt: null,
+        lastDownloadAt: null,
+      },
+    }));
   }
 
   async validateCode(code: string) {

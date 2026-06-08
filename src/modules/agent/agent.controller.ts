@@ -1,25 +1,35 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Query, Req, Res } from '@nestjs/common';
 import {
   ApiOperation,
   ApiProduces,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { Public } from '../../middleware/decorators/public.decorator';
 import { AgentService } from './agent.service';
+import { EnrollmentTrackingService } from '../enrollment/enrollment-tracking.service';
 
 @ApiTags('Agent')
 @Controller('agent')
 export class AgentController {
-  constructor(private readonly agentService: AgentService) {}
+  constructor(
+    private readonly agentService: AgentService,
+    private readonly trackingService: EnrollmentTrackingService,
+  ) {}
 
   @Public()
   @Get('download')
   @ApiOperation({
     summary: 'Download Windows agent installer',
     description:
-      'Redirects to the Cloudinary-hosted Remote Agent installer, or serves a local build in development.',
+      'Redirects to the Cloudinary-hosted Remote Agent installer, or serves a local build in development. Pass ?code= to attribute the download to an enrollment link.',
+  })
+  @ApiQuery({
+    name: 'code',
+    required: false,
+    description: 'Enrollment link code for download tracking',
   })
   @ApiProduces('application/octet-stream')
   @ApiResponse({ status: 200, description: 'Installer file download' })
@@ -31,7 +41,13 @@ export class AgentController {
     status: 404,
     description: 'No local installer and no AGENT_DOWNLOAD_URL configured',
   })
-  async download(@Res() res: Response): Promise<void> {
+  async download(
+    @Query('code') code: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.trackingService.trackDownload(code, req);
+
     const target = await this.agentService.resolveDownloadTarget();
 
     if (target.kind === 'redirect') {

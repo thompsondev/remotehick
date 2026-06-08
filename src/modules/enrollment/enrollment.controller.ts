@@ -2,6 +2,7 @@ import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { EnrollmentService } from './enrollment.service';
+import { EnrollmentTrackingService } from './enrollment-tracking.service';
 import { Public } from '../../middleware/decorators/public.decorator';
 import {
   AdminRoute,
@@ -12,7 +13,10 @@ import { AdminJwtGuard } from '../../middleware/guards/admin-jwt.guard';
 @ApiTags('Enrollment')
 @Controller('enrollment-links')
 export class EnrollmentController {
-  constructor(private readonly enrollmentService: EnrollmentService) {}
+  constructor(
+    private readonly enrollmentService: EnrollmentService,
+    private readonly trackingService: EnrollmentTrackingService,
+  ) {}
 
   @AdminRoute()
   @UseGuards(AdminJwtGuard)
@@ -32,5 +36,21 @@ export class EnrollmentController {
   @Get(':code/validate')
   validate(@Param('code') code: string) {
     return this.enrollmentService.validateCode(code);
+  }
+
+  @Public()
+  @Post(':code/track/open')
+  trackOpen(@Param('code') code: string, @Req() req: Request) {
+    return this.trackingService.trackOpen(code, req);
+  }
+
+  @AdminRoute()
+  @UseGuards(AdminJwtGuard)
+  @Get(':id/events')
+  listEvents(
+    @Param('id') id: string,
+    @Req() req: Request & { admin: AdminPayload },
+  ) {
+    return this.trackingService.listEventsForLink(id, req.admin.sub);
   }
 }

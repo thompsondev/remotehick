@@ -18,6 +18,11 @@ enum SessionStatus {
   ENDED
 }
 
+enum EnrollmentLinkEventType {
+  OPEN
+  DOWNLOAD
+}
+
 model Admin {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -57,6 +62,20 @@ model EnrollmentLink {
 
   createdByAdmin Admin   @relation(fields: [createdByAdminId], references: [id])
   device         Device? @relation(fields: [deviceId], references: [id])
+  events         EnrollmentLinkEvent[]
+}
+
+model EnrollmentLinkEvent {
+  id         String                  @id @default(cuid())
+  linkId     String
+  type       EnrollmentLinkEventType
+  visitorKey String?
+  createdAt  DateTime                @default(now())
+
+  link EnrollmentLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, type])
+  @@index([linkId, createdAt])
 }
 
 model RemoteSession {
