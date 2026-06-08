@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.log
+.temp
+.tmp
+public/agents/*.zip
+public/agents/*.exe

@@ -137,7 +137,7 @@ async function bootstrap() {
     aiModelRaw && aiModelRaw.length > 0 ? aiModelRaw : 'openai/gpt-4o-mini';
 
   try {
-    await app.listen(port);
+    await app.listen(port, '0.0.0.0');
     const baseUrl = `http://localhost:${port}`;
     console.log(`Server running at ${baseUrl}`);
     console.log(`AI model: ${aiModel}`);
