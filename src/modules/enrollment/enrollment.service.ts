@@ -1,8 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { generateEnrollmentCode } from '../../middleware/helpers/tokens';
 import { EnrollmentTrackingService } from './enrollment-tracking.service';
+
+export type EnrollmentLinkStatus = 'active' | 'expired' | 'used';
+
+function resolveLinkStatus(link: {
+  usedAt: Date | null;
+  expiresAt: Date;
+}): EnrollmentLinkStatus {
+  if (link.usedAt) return 'used';
+  if (link.expiresAt < new Date()) return 'expired';
+  return 'active';
+}
 
 @Injectable()
 export class EnrollmentService {
@@ -51,6 +66,7 @@ export class EnrollmentService {
 
     return links.map((link) => ({
       ...link,
+      status: resolveLinkStatus(link),
       stats: stats.get(link.id) ?? {
         openCount: 0,
         uniqueOpenCount: 0,
@@ -60,6 +76,47 @@ export class EnrollmentService {
         lastDownloadAt: null,
       },
     }));
+  }
+
+  async deleteLink(adminId: string, linkId: string) {
+    const link = await this.prisma.enrollmentLink.findFirst({
+      where: { id: linkId, createdByAdminId: adminId },
+      select: { id: true },
+    });
+    if (!link) {
+      throw new NotFoundException('Enrollment link not found');
+    }
+
+    await this.prisma.enrollmentLink.delete({ where: { id: linkId } });
+    return { success: true, deletedId: linkId };
+  }
+
+  async deleteLinks(adminId: string, ids: string[]) {
+    const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException('No link ids provided');
+    }
+
+    const result = await this.prisma.enrollmentLink.deleteMany({
+      where: {
+        id: { in: uniqueIds },
+        createdByAdminId: adminId,
+      },
+    });
+
+    return { success: true, deletedCount: result.count };
+  }
+
+  async deleteExpiredLinks(adminId: string) {
+    const result = await this.prisma.enrollmentLink.deleteMany({
+      where: {
+        createdByAdminId: adminId,
+        usedAt: null,
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    return { success: true, deletedCount: result.count };
   }
 
   async validateCode(code: string) {

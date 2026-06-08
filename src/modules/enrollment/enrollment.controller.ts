@@ -1,8 +1,18 @@
-import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { EnrollmentService } from './enrollment.service';
 import { EnrollmentTrackingService } from './enrollment-tracking.service';
+import { BulkDeleteEnrollmentLinksDto } from './dto/bulk-delete-links.dto';
 import { Public } from '../../middleware/decorators/public.decorator';
 import {
   AdminRoute,
@@ -30,6 +40,33 @@ export class EnrollmentController {
   @Get()
   listLinks(@Req() req: Request & { admin: AdminPayload }) {
     return this.enrollmentService.listLinks(req.admin.sub);
+  }
+
+  @AdminRoute()
+  @UseGuards(AdminJwtGuard)
+  @Delete('expired')
+  deleteExpired(@Req() req: Request & { admin: AdminPayload }) {
+    return this.enrollmentService.deleteExpiredLinks(req.admin.sub);
+  }
+
+  @AdminRoute()
+  @UseGuards(AdminJwtGuard)
+  @Post('bulk-delete')
+  bulkDelete(
+    @Req() req: Request & { admin: AdminPayload },
+    @Body() body: BulkDeleteEnrollmentLinksDto,
+  ) {
+    return this.enrollmentService.deleteLinks(req.admin.sub, body.ids);
+  }
+
+  @AdminRoute()
+  @UseGuards(AdminJwtGuard)
+  @Delete(':id')
+  deleteLink(
+    @Param('id') id: string,
+    @Req() req: Request & { admin: AdminPayload },
+  ) {
+    return this.enrollmentService.deleteLink(req.admin.sub, id);
   }
 
   @Public()
