@@ -7,6 +7,54 @@ import { loadEnv } from './lib/env-utils.mjs';
 const releaseDir = path.resolve('../remoteagent/release');
 const outDir = path.resolve('public/agents');
 
+/** Files/folders required for Electron to start without locale or runtime errors. */
+const REQUIRED_PATHS = [
+  'Remote Agent.exe',
+  'icudtl.dat',
+  'resources/app.asar',
+  'locales/en-US.pak',
+];
+
+const README = `Remote Agent — Installation
+============================
+
+1. Extract this ENTIRE zip to a folder (e.g. C:\\RemoteAgent)
+   Do NOT run Remote Agent.exe from inside the zip file.
+
+2. Open the extracted folder and double-click "Remote Agent.exe"
+
+3. When prompted, paste the enrollment code from your administrator.
+
+4. Keep the app running in the system tray (near the clock).
+
+If Windows SmartScreen appears, click "More info" then "Run anyway".
+The app is not code-signed yet.
+
+Support: your administrator can generate a new enrollment link if needed.
+`;
+
+function verifyStagingDir(stagingDir) {
+  const missing = [];
+  for (const relativePath of REQUIRED_PATHS) {
+    const fullPath = path.join(stagingDir, ...relativePath.split('/'));
+    if (!fs.existsSync(fullPath)) {
+      missing.push(relativePath);
+    }
+  }
+
+  const configPath = path.join(stagingDir, 'remote-agent-config.json');
+  if (!fs.existsSync(configPath)) {
+    missing.push('remote-agent-config.json');
+  }
+
+  if (missing.length) {
+    throw new Error(
+      `Agent package is incomplete. Missing: ${missing.join(', ')}. ` +
+        'Rebuild with: cd ../remoteagent && pnpm dist && cd ../remotehick && pnpm copy:agent',
+    );
+  }
+}
+
 if (!fs.existsSync(releaseDir)) {
   console.error('No release folder found. Run: cd ../remoteagent && pnpm dist');
   process.exit(1);
@@ -46,8 +94,8 @@ if (fs.existsSync(zipTarget)) {
 }
 
 const zipSource = path.resolve(unpackedDir);
+// Only exclude optional extras — keep locales/ and all runtime DLLs.
 const excludedNames = new Set([
-  'locales',
   'LICENSES.chromium.html',
   'vk_swiftshader.dll',
   'vk_swiftshader_icd.json',
@@ -94,6 +142,9 @@ if (process.platform === 'win32') {
       JSON.stringify({ apiUrl, wsUrl }, null, 2),
       'utf8',
     );
+    fs.writeFileSync(path.join(stagingDir, 'README.txt'), README, 'utf8');
+
+    verifyStagingDir(stagingDir);
 
     if (fs.existsSync(zipTarget)) {
       fs.unlinkSync(zipTarget);
@@ -122,4 +173,5 @@ if (process.platform === 'win32') {
 }
 
 const sizeMb = (fs.statSync(zipTarget).size / (1024 * 1024)).toFixed(1);
-console.log(`Packaged slim agent (${sizeMb} MB) -> ${zipTarget}`);
+console.log(`Packaged agent (${sizeMb} MB) -> ${zipTarget}`);
+console.log('Verified: locales, icudtl.dat, remote-agent-config.json');
