@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import type { Request } from 'express';
 
-export function visitorKeyFromRequest(req: Request): string | undefined {
+export function clientIpFromRequest(req: Request): string | undefined {
   const forwarded = req.headers['x-forwarded-for'];
   const ip =
     req.ip ||
@@ -9,6 +9,12 @@ export function visitorKeyFromRequest(req: Request): string | undefined {
       ? forwarded.split(',')[0]?.trim()
       : undefined) ||
     req.socket.remoteAddress;
+  if (!ip) return undefined;
+  return ip.replace(/^::ffff:/, '');
+}
+
+export function visitorKeyFromRequest(req: Request): string | undefined {
+  const ip = clientIpFromRequest(req);
   const userAgent = req.headers['user-agent'] || '';
 
   if (!ip) return undefined;

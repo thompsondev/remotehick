@@ -47,14 +47,14 @@ export class DeviceController {
 
   @Public()
   @Post('enroll')
-  enroll(@Body() dto: EnrollDeviceDto) {
-    return this.deviceService.enroll(dto);
+  enroll(@Body() dto: EnrollDeviceDto, @Req() req: Request) {
+    return this.deviceService.enroll(dto, req);
   }
 
   @Public()
   @Post('enroll-browser')
-  enrollBrowser(@Body() dto: EnrollBrowserDto) {
-    return this.deviceService.enrollBrowser(dto);
+  enrollBrowser(@Body() dto: EnrollBrowserDto, @Req() req: Request) {
+    return this.deviceService.enrollBrowser(dto, req);
   }
 
   @DeviceRoute()

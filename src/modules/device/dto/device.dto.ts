@@ -16,6 +16,26 @@ export class EnrollDeviceDto {
   @IsOptional()
   @IsString()
   ipAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  browser?: string;
+
+  @IsOptional()
+  @IsString()
+  userAgent?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  screenResolution?: string;
 }
 
 export class HeartbeatDto {
@@ -39,4 +59,24 @@ export class EnrollBrowserDto {
   @IsOptional()
   @IsString()
   hostname?: string;
+
+  @IsOptional()
+  @IsString()
+  browser?: string;
+
+  @IsOptional()
+  @IsString()
+  userAgent?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  screenResolution?: string;
 }

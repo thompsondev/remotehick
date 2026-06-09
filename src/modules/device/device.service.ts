@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   DeviceStatus,
   DeviceType,
@@ -11,6 +12,7 @@ import {
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { NotificationService } from '../../lib/notification/notification.service';
 import { RedisService } from '../../lib/redis/redis.service';
+import { clientIpFromRequest } from '../../middleware/helpers/tracking';
 import {
   generateDeviceToken,
   hashToken,
@@ -23,6 +25,28 @@ import {
 
 const ONLINE_TTL = 60;
 
+const DEVICE_SELECT = {
+  id: true,
+  name: true,
+  os: true,
+  hostname: true,
+  ipAddress: true,
+  browser: true,
+  userAgent: true,
+  timezone: true,
+  language: true,
+  country: true,
+  city: true,
+  screenResolution: true,
+  deviceType: true,
+  status: true,
+  enrolledAt: true,
+  lastSeenAt: true,
+  revokedAt: true,
+  enrollmentLinkId: true,
+  enrollmentLink: { select: { id: true, code: true, createdAt: true } },
+} as const;
+
 @Injectable()
 export class DeviceService {
   constructor(
@@ -31,22 +55,127 @@ export class DeviceService {
     private readonly notifications: NotificationService,
   ) {}
 
+  private isLinkExpired(expiresAt: Date | null): boolean {
+    return !!expiresAt && expiresAt < new Date();
+  }
+
+  private assertLinkSupportsAgent(link: {
+    kind: EnrollmentLinkKind;
+    expiresAt: Date | null;
+  }) {
+    if (this.isLinkExpired(link.expiresAt)) {
+      throw new BadRequestException('Enrollment link expired');
+    }
+    if (link.kind === EnrollmentLinkKind.INSTANT) {
+      throw new BadRequestException(
+        'This link is for instant browser connect only',
+      );
+    }
+  }
+
+  private assertLinkSupportsInstant(link: {
+    kind: EnrollmentLinkKind;
+    expiresAt: Date | null;
+  }) {
+    if (this.isLinkExpired(link.expiresAt)) {
+      throw new BadRequestException('Enrollment link expired');
+    }
+    if (link.kind === EnrollmentLinkKind.AGENT) {
+      throw new BadRequestException(
+        'This link requires the Windows agent installer',
+      );
+    }
+  }
+
+  private formatSessionName(browser: string, enrolledAt = new Date()) {
+    return `${browser} · ${enrolledAt.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })}`;
+  }
+
+  private async resolveGeoFromIp(
+    ip: string | undefined,
+  ): Promise<{ country?: string; city?: string }> {
+    if (!ip) return {};
+    if (
+      ip === '127.0.0.1' ||
+      ip === '::1' ||
+      ip.startsWith('10.') ||
+      ip.startsWith('192.168.') ||
+      ip.startsWith('172.')
+    ) {
+      return {};
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(
+        `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,city`,
+        { signal: controller.signal },
+      );
+      clearTimeout(timeout);
+      const data = (await res.json()) as {
+        status?: string;
+        country?: string;
+        city?: string;
+      };
+      if (data.status === 'success') {
+        return { country: data.country, city: data.city };
+      }
+    } catch {
+      /* geo lookup is best-effort */
+    }
+    return {};
+  }
+
+  private async buildDeviceMetadata(
+    dto: {
+      name?: string;
+      os?: string;
+      hostname?: string;
+      browser?: string;
+      userAgent?: string;
+      timezone?: string;
+      language?: string;
+      screenResolution?: string;
+      ipAddress?: string;
+    },
+    req?: Request,
+    defaults?: { name: string; hostname: string; os: string; browser: string },
+  ) {
+    const ip =
+      dto.ipAddress?.trim() ||
+      (req ? clientIpFromRequest(req) : undefined) ||
+      undefined;
+    const browser = dto.browser?.trim() || defaults?.browser || 'Web Browser';
+    const geo = await this.resolveGeoFromIp(ip);
+    const enrolledAt = new Date();
+
+    return {
+      name: dto.name?.trim() || this.formatSessionName(browser, enrolledAt),
+      os: dto.os?.trim() || defaults?.os || 'Web Browser',
+      hostname: dto.hostname?.trim() || defaults?.hostname || 'browser',
+      ipAddress: ip,
+      browser,
+      userAgent: dto.userAgent?.trim() || req?.headers['user-agent'] || null,
+      timezone: dto.timezone?.trim() || null,
+      language: dto.language?.trim() || null,
+      screenResolution: dto.screenResolution?.trim() || null,
+      country: geo.country || null,
+      city: geo.city || null,
+    };
+  }
+
   async listDevices() {
     const devices = await this.prisma.device.findMany({
       where: { revokedAt: null },
       orderBy: { lastSeenAt: 'desc' },
       select: {
-        id: true,
-        name: true,
-        os: true,
-        hostname: true,
-        ipAddress: true,
-        deviceType: true,
-        status: true,
-        enrolledAt: true,
-        lastSeenAt: true,
-        revokedAt: true,
-        enrollmentLink: { select: { code: true, createdAt: true } },
+        ...DEVICE_SELECT,
         sessions: {
           take: 5,
           orderBy: { createdAt: 'desc' },
@@ -73,18 +202,8 @@ export class DeviceService {
     const device = await this.prisma.device.findFirst({
       where: { id, revokedAt: null },
       select: {
-        id: true,
-        name: true,
-        os: true,
-        hostname: true,
-        ipAddress: true,
-        deviceType: true,
-        status: true,
-        enrolledAt: true,
-        lastSeenAt: true,
-        revokedAt: true,
+        ...DEVICE_SELECT,
         sessions: { orderBy: { createdAt: 'desc' }, take: 20 },
-        enrollmentLink: true,
       },
     });
     if (!device) throw new NotFoundException('Device not found');
@@ -94,41 +213,7 @@ export class DeviceService {
     };
   }
 
-  private assertLinkSupportsAgent(link: {
-    kind: EnrollmentLinkKind;
-    usedAt: Date | null;
-    expiresAt: Date;
-  }) {
-    if (link.usedAt)
-      throw new BadRequestException('Enrollment link already used');
-    if (link.expiresAt < new Date()) {
-      throw new BadRequestException('Enrollment link expired');
-    }
-    if (link.kind === EnrollmentLinkKind.INSTANT) {
-      throw new BadRequestException(
-        'This link is for instant browser connect only',
-      );
-    }
-  }
-
-  private assertLinkSupportsInstant(link: {
-    kind: EnrollmentLinkKind;
-    usedAt: Date | null;
-    expiresAt: Date;
-  }) {
-    if (link.usedAt)
-      throw new BadRequestException('Enrollment link already used');
-    if (link.expiresAt < new Date()) {
-      throw new BadRequestException('Enrollment link expired');
-    }
-    if (link.kind === EnrollmentLinkKind.AGENT) {
-      throw new BadRequestException(
-        'This link requires the Windows agent installer',
-      );
-    }
-  }
-
-  async enroll(dto: EnrollDeviceDto) {
+  async enroll(dto: EnrollDeviceDto, req?: Request) {
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code: dto.code },
     });
@@ -137,25 +222,32 @@ export class DeviceService {
 
     const deviceToken = generateDeviceToken();
     const deviceTokenHash = hashToken(deviceToken);
+    const geo = await this.resolveGeoFromIp(
+      dto.ipAddress?.trim() || (req ? clientIpFromRequest(req) : undefined),
+    );
 
-    const device = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.device.create({
-        data: {
-          name: dto.name,
-          os: dto.os,
-          hostname: dto.hostname,
-          ipAddress: dto.ipAddress,
-          deviceType: DeviceType.NATIVE,
-          deviceTokenHash,
-          status: DeviceStatus.ONLINE,
-          lastSeenAt: new Date(),
-        },
-      });
-      await tx.enrollmentLink.update({
-        where: { id: link.id },
-        data: { usedAt: new Date(), deviceId: created.id },
-      });
-      return created;
+    const device = await this.prisma.device.create({
+      data: {
+        name: dto.name,
+        os: dto.os,
+        hostname: dto.hostname,
+        ipAddress:
+          dto.ipAddress?.trim() ||
+          (req ? clientIpFromRequest(req) : undefined) ||
+          null,
+        browser: dto.browser?.trim() || null,
+        userAgent: dto.userAgent?.trim() || req?.headers['user-agent'] || null,
+        timezone: dto.timezone?.trim() || null,
+        language: dto.language?.trim() || null,
+        screenResolution: dto.screenResolution?.trim() || null,
+        country: geo.country || null,
+        city: geo.city || null,
+        deviceType: DeviceType.NATIVE,
+        deviceTokenHash,
+        status: DeviceStatus.ONLINE,
+        lastSeenAt: new Date(),
+        enrollmentLinkId: link.id,
+      },
     });
 
     await this.redis.set(`device:online:${device.id}`, true, ONLINE_TTL);
@@ -181,7 +273,7 @@ export class DeviceService {
     };
   }
 
-  async enrollBrowser(dto: EnrollBrowserDto) {
+  async enrollBrowser(dto: EnrollBrowserDto, req?: Request) {
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code: dto.code },
     });
@@ -190,27 +282,22 @@ export class DeviceService {
 
     const deviceToken = generateDeviceToken();
     const deviceTokenHash = hashToken(deviceToken);
-    const name = dto.name?.trim() || 'Browser Session';
-    const hostname = dto.hostname?.trim() || 'browser';
-    const os = dto.os?.trim() || 'Web Browser';
+    const meta = await this.buildDeviceMetadata(dto, req, {
+      name: 'Browser Session',
+      hostname: 'browser',
+      os: 'Web Browser',
+      browser: 'Web Browser',
+    });
 
-    const device = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.device.create({
-        data: {
-          name,
-          os,
-          hostname,
-          deviceType: DeviceType.BROWSER,
-          deviceTokenHash,
-          status: DeviceStatus.ONLINE,
-          lastSeenAt: new Date(),
-        },
-      });
-      await tx.enrollmentLink.update({
-        where: { id: link.id },
-        data: { usedAt: new Date(), deviceId: created.id },
-      });
-      return created;
+    const device = await this.prisma.device.create({
+      data: {
+        ...meta,
+        deviceType: DeviceType.BROWSER,
+        deviceTokenHash,
+        status: DeviceStatus.ONLINE,
+        lastSeenAt: new Date(),
+        enrollmentLinkId: link.id,
+      },
     });
 
     await this.redis.set(`device:online:${device.id}`, true, ONLINE_TTL);

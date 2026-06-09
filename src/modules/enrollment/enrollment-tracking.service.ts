@@ -24,17 +24,17 @@ export class EnrollmentTrackingService {
     private readonly notifications: NotificationService,
   ) {}
 
-  private async findActiveLink(code: string) {
+  private async findUsableLink(code: string) {
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code },
     });
     if (!link) return null;
-    if (link.usedAt || link.expiresAt < new Date()) return null;
+    if (link.expiresAt && link.expiresAt < new Date()) return null;
     return link;
   }
 
   async trackOpen(code: string, req: Request) {
-    const link = await this.findActiveLink(code);
+    const link = await this.findUsableLink(code);
     if (!link) return { tracked: false };
 
     await this.prisma.enrollmentLinkEvent.create({
@@ -51,22 +51,8 @@ export class EnrollmentTrackingService {
   }
 
   async trackConnect(code: string, req: Request) {
-    const link = await this.findActiveLink(code);
-    if (!link) {
-      const usedLink = await this.prisma.enrollmentLink.findUnique({
-        where: { code },
-      });
-      if (!usedLink?.usedAt) return { tracked: false };
-
-      await this.prisma.enrollmentLinkEvent.create({
-        data: {
-          linkId: usedLink.id,
-          type: EnrollmentLinkEventType.CONNECT,
-          visitorKey: visitorKeyFromRequest(req),
-        },
-      });
-      return { tracked: true };
-    }
+    const link = await this.findUsableLink(code);
+    if (!link) return { tracked: false };
 
     await this.prisma.enrollmentLinkEvent.create({
       data: {
@@ -84,7 +70,7 @@ export class EnrollmentTrackingService {
   async trackDownload(code: string | undefined, req: Request) {
     if (!code?.trim()) return { tracked: false };
 
-    const link = await this.findActiveLink(code.trim());
+    const link = await this.findUsableLink(code.trim());
     if (!link) return { tracked: false };
 
     await this.prisma.enrollmentLinkEvent.create({

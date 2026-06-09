@@ -4,24 +4,39 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  DeviceType,
-  EnrollmentLinkKind,
-} from '../../../generated/prisma/client';
+import { EnrollmentLinkKind } from '../../../generated/prisma/client';
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { generateEnrollmentCode } from '../../middleware/helpers/tokens';
 import { EnrollmentTrackingService } from './enrollment-tracking.service';
 
-export type EnrollmentLinkStatus = 'active' | 'expired' | 'used';
+export type EnrollmentLinkStatus = 'active' | 'expired';
 
 function resolveLinkStatus(link: {
-  usedAt: Date | null;
-  expiresAt: Date;
+  expiresAt: Date | null;
 }): EnrollmentLinkStatus {
-  if (link.usedAt) return 'used';
-  if (link.expiresAt < new Date()) return 'expired';
+  if (link.expiresAt && link.expiresAt < new Date()) return 'expired';
   return 'active';
 }
+
+const LINK_DEVICE_SELECT = {
+  id: true,
+  name: true,
+  hostname: true,
+  os: true,
+  browser: true,
+  ipAddress: true,
+  country: true,
+  city: true,
+  timezone: true,
+  language: true,
+  screenResolution: true,
+  userAgent: true,
+  status: true,
+  deviceType: true,
+  enrolledAt: true,
+  lastSeenAt: true,
+  revokedAt: true,
+} as const;
 
 @Injectable()
 export class EnrollmentService {
@@ -46,13 +61,16 @@ export class EnrollmentService {
 
   async createLink(
     adminId: string,
-    kind: EnrollmentLinkKind = EnrollmentLinkKind.INSTANT,
+    kind: EnrollmentLinkKind = EnrollmentLinkKind.BOTH,
   ) {
     const ttlHours = Number(
-      this.config.get<string>('ENROLLMENT_LINK_TTL_HOURS') || 24,
+      this.config.get<string>('ENROLLMENT_LINK_TTL_HOURS') || 0,
     );
     const code = generateEnrollmentCode();
-    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
+    const expiresAt =
+      ttlHours > 0
+        ? new Date(Date.now() + ttlHours * 60 * 60 * 1000)
+        : null;
 
     const link = await this.prisma.enrollmentLink.create({
       data: {
@@ -79,14 +97,10 @@ export class EnrollmentService {
       where: { createdByAdminId: adminId },
       orderBy: { createdAt: 'desc' },
       include: {
-        device: {
-          select: {
-            id: true,
-            name: true,
-            hostname: true,
-            status: true,
-            deviceType: true,
-          },
+        devices: {
+          where: { revokedAt: null },
+          orderBy: { enrolledAt: 'desc' },
+          select: LINK_DEVICE_SELECT,
         },
       },
     });
@@ -101,6 +115,7 @@ export class EnrollmentService {
         ...link,
         agentUrl,
         instantUrl,
+        deviceCount: link.devices.length,
         url:
           link.kind === EnrollmentLinkKind.AGENT
             ? agentUrl
@@ -156,7 +171,6 @@ export class EnrollmentService {
     const result = await this.prisma.enrollmentLink.deleteMany({
       where: {
         createdByAdminId: adminId,
-        usedAt: null,
         expiresAt: { lt: new Date() },
       },
     });
@@ -168,30 +182,19 @@ export class EnrollmentService {
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code },
       include: {
-        device: {
-          select: {
-            id: true,
-            name: true,
-            hostname: true,
-            deviceType: true,
-            revokedAt: true,
-          },
+        devices: {
+          where: { revokedAt: null },
+          orderBy: { enrolledAt: 'desc' },
+          take: 10,
+          select: LINK_DEVICE_SELECT,
         },
       },
     });
     if (!link) return { valid: false, reason: 'not_found' };
-    if (link.expiresAt < new Date()) {
+    if (link.expiresAt && link.expiresAt < new Date()) {
       return { valid: false, reason: 'expired', expiresAt: link.expiresAt };
     }
-    if (link.usedAt) {
-      return {
-        valid: false,
-        reason: 'used',
-        usedAt: link.usedAt,
-        kind: link.kind,
-        device: link.device,
-      };
-    }
+
     const { agentUrl, instantUrl } = this.buildLinkUrls(code);
     return {
       valid: true,
@@ -200,27 +203,17 @@ export class EnrollmentService {
       expiresAt: link.expiresAt,
       agentUrl,
       instantUrl,
-      device: link.device,
+      deviceCount: link.devices.length,
+      devices: link.devices,
     };
   }
 
   async validateConnectCode(code: string) {
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code },
-      include: {
-        device: {
-          select: {
-            id: true,
-            name: true,
-            hostname: true,
-            deviceType: true,
-            revokedAt: true,
-          },
-        },
-      },
     });
     if (!link) return { valid: false, reason: 'not_found' };
-    if (link.expiresAt < new Date()) {
+    if (link.expiresAt && link.expiresAt < new Date()) {
       return { valid: false, reason: 'expired', expiresAt: link.expiresAt };
     }
     if (link.kind === EnrollmentLinkKind.AGENT) {
@@ -229,42 +222,13 @@ export class EnrollmentService {
 
     const { instantUrl } = this.buildLinkUrls(code);
 
-    if (!link.usedAt) {
-      return {
-        valid: true,
-        ready: false,
-        kind: link.kind,
-        expiresAt: link.expiresAt,
-        instantUrl,
-      };
-    }
-
-    const device = link.device;
-    if (
-      device &&
-      device.deviceType === DeviceType.BROWSER &&
-      !device.revokedAt
-    ) {
-      return {
-        valid: true,
-        ready: true,
-        reconnect: true,
-        kind: link.kind,
-        expiresAt: link.expiresAt,
-        instantUrl,
-        device: {
-          id: device.id,
-          name: device.name,
-          hostname: device.hostname,
-        },
-      };
-    }
-
     return {
-      valid: false,
-      reason: 'used',
-      usedAt: link.usedAt,
+      valid: true,
+      ready: true,
+      reusable: true,
       kind: link.kind,
+      expiresAt: link.expiresAt,
+      instantUrl,
     };
   }
 }

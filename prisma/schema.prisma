@@ -48,34 +48,42 @@ model Admin {
 }
 
 model Device {
-  id              String       @id @default(cuid())
-  name            String
-  os              String
-  hostname        String
-  ipAddress       String?
-  deviceType      DeviceType   @default(NATIVE)
-  status          DeviceStatus @default(OFFLINE)
-  deviceTokenHash String
-  enrolledAt      DateTime     @default(now())
-  lastSeenAt      DateTime?
-  revokedAt       DateTime?
+  id               String       @id @default(cuid())
+  name             String
+  os               String
+  hostname         String
+  ipAddress        String?
+  browser          String?
+  userAgent        String?
+  timezone         String?
+  language         String?
+  country          String?
+  city             String?
+  screenResolution String?
+  deviceType       DeviceType   @default(NATIVE)
+  status           DeviceStatus @default(OFFLINE)
+  deviceTokenHash  String
+  enrolledAt       DateTime     @default(now())
+  lastSeenAt       DateTime?
+  revokedAt        DateTime?
+  enrollmentLinkId String?
 
-  enrollmentLink EnrollmentLink?
+  enrollmentLink EnrollmentLink? @relation(fields: [enrollmentLinkId], references: [id], onDelete: SetNull)
   sessions       RemoteSession[]
+
+  @@index([enrollmentLinkId])
 }
 
 model EnrollmentLink {
   id               String             @id @default(cuid())
   code             String             @unique
   kind             EnrollmentLinkKind @default(BOTH)
-  expiresAt        DateTime
-  usedAt           DateTime?
+  expiresAt        DateTime?
   createdAt        DateTime           @default(now())
   createdByAdminId String
-  deviceId         String?            @unique
 
-  createdByAdmin Admin   @relation(fields: [createdByAdminId], references: [id])
-  device         Device? @relation(fields: [deviceId], references: [id])
+  createdByAdmin Admin                 @relation(fields: [createdByAdminId], references: [id])
+  devices        Device[]
   events         EnrollmentLinkEvent[]
 }
 
