@@ -65,6 +65,10 @@ export class SignalingService {
     }
   }
 
+  notifyViewerReady(deviceId: string, sessionId: string) {
+    this.relayToDevice(deviceId, 'viewer_ready', { sessionId });
+  }
+
   relayToAdmin(adminId: string, event: string, data: unknown) {
     const socketId = this.adminSockets.get(adminId);
     if (socketId && this.gateway) {

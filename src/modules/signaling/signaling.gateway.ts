@@ -100,12 +100,47 @@ export class SignalingGateway
   }
 
   @SubscribeMessage('join_session')
-  handleJoinSession(
+  async handleJoinSession(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { sessionId: string },
   ) {
-    void client.join(`session:${data.sessionId}`);
+    await client.join(`session:${data.sessionId}`);
+
+    if (client.data.role === 'admin') {
+      const session = await this.prisma.remoteSession.findUnique({
+        where: { id: data.sessionId },
+        select: { deviceId: true, status: true },
+      });
+      if (
+        session &&
+        (session.status === 'ACTIVE' || session.status === 'PENDING')
+      ) {
+        this.signaling.notifyViewerReady(session.deviceId, data.sessionId);
+      }
+    }
+
     return { joined: data.sessionId };
+  }
+
+  @SubscribeMessage('viewer_ready')
+  handleViewerReady(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    if (client.data.role !== 'admin') return;
+    void this.prisma.remoteSession
+      .findUnique({
+        where: { id: data.sessionId },
+        select: { deviceId: true, status: true },
+      })
+      .then((session) => {
+        if (
+          session &&
+          (session.status === 'ACTIVE' || session.status === 'PENDING')
+        ) {
+          this.signaling.notifyViewerReady(session.deviceId, data.sessionId);
+        }
+      });
   }
 
   @SubscribeMessage('session_accept')
@@ -126,6 +161,7 @@ export class SignalingGateway
     data: { sessionId: string; offer: unknown },
   ) {
     this.signaling.relayToSession(data.sessionId, 'webrtc_offer', {
+      sessionId: data.sessionId,
       from: client.data.role,
       offer: data.offer,
     });
@@ -138,6 +174,7 @@ export class SignalingGateway
     data: { sessionId: string; answer: unknown },
   ) {
     this.signaling.relayToSession(data.sessionId, 'webrtc_answer', {
+      sessionId: data.sessionId,
       from: client.data.role,
       answer: data.answer,
     });
@@ -150,6 +187,7 @@ export class SignalingGateway
     data: { sessionId: string; candidate: unknown },
   ) {
     this.signaling.relayToSession(data.sessionId, 'webrtc_ice', {
+      sessionId: data.sessionId,
       from: client.data.role,
       candidate: data.candidate,
     });
