@@ -5,6 +5,8 @@ import { WhatsappModule } from './whatsapp/wa.module';
 import { RedisModule } from './redis/redis.module';
 import { SlackModule } from './slack/slack.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { EmailModule } from './email/email.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
     RedisModule,
     SlackModule,
     CloudinaryModule,
+    EmailModule,
+    NotificationModule,
   ],
 })
 export class LibModule {}

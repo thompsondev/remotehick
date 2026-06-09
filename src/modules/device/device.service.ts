@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { DeviceStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../lib/prisma/prisma.service';
+import { NotificationService } from '../../lib/notification/notification.service';
 import { RedisService } from '../../lib/redis/redis.service';
 import {
   generateDeviceToken,
@@ -19,6 +20,7 @@ export class DeviceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async listDevices() {
@@ -117,6 +119,14 @@ export class DeviceService {
 
     await this.redis.set(`device:online:${device.id}`, true, ONLINE_TTL);
 
+    this.notifications.notifyDeviceEnrolled({
+      adminId: link.createdByAdminId,
+      code: link.code,
+      deviceName: device.name,
+      hostname: device.hostname,
+      os: device.os,
+    });
+
     return {
       deviceId: device.id,
       deviceToken,
@@ -130,6 +140,7 @@ export class DeviceService {
   }
 
   async heartbeat(deviceId: string, dto: HeartbeatDto) {
+    const wasOnline = await this.isDeviceOnline(deviceId);
     const device = await this.prisma.device.update({
       where: { id: deviceId },
       data: {
@@ -137,9 +148,38 @@ export class DeviceService {
         lastSeenAt: new Date(),
         ...(dto.ipAddress ? { ipAddress: dto.ipAddress } : {}),
       },
+      include: {
+        enrollmentLink: { select: { createdByAdminId: true } },
+      },
     });
     await this.redis.set(`device:online:${deviceId}`, true, ONLINE_TTL);
+
+    if (!wasOnline) {
+      this.notifications.notifyDeviceOnline(device);
+    }
+
     return { success: true, lastSeenAt: device.lastSeenAt };
+  }
+
+  async markOnline(deviceId: string) {
+    const wasOnline = await this.isDeviceOnline(deviceId);
+    const device = await this.prisma.device.update({
+      where: { id: deviceId },
+      data: {
+        status: DeviceStatus.ONLINE,
+        lastSeenAt: new Date(),
+      },
+      include: {
+        enrollmentLink: { select: { createdByAdminId: true } },
+      },
+    });
+    await this.redis.set(`device:online:${deviceId}`, true, ONLINE_TTL);
+
+    if (!wasOnline) {
+      this.notifications.notifyDeviceOnline(device);
+    }
+
+    return device;
   }
 
   async revoke(deviceId: string) {
@@ -152,11 +192,19 @@ export class DeviceService {
   }
 
   async markOffline(deviceId: string) {
-    await this.prisma.device.update({
+    const wasOnline = await this.isDeviceOnline(deviceId);
+    const device = await this.prisma.device.update({
       where: { id: deviceId },
       data: { status: DeviceStatus.OFFLINE },
+      include: {
+        enrollmentLink: { select: { createdByAdminId: true } },
+      },
     });
     await this.redis.delete(`device:online:${deviceId}`);
+
+    if (wasOnline) {
+      this.notifications.notifyDeviceOffline(device);
+    }
   }
 
   async isDeviceOnline(deviceId: string): Promise<boolean> {

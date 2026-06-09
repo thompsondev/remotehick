@@ -75,6 +75,7 @@ export class SignalingGateway
         client.data.deviceId = device.id;
         this.signaling.registerDeviceSocket(device.id, client.id);
         await client.join(`device:${device.id}`);
+        await this.deviceService.markOnline(device.id);
         return;
       }
 

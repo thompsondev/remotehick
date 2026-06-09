@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { EnrollmentLinkEventType } from '../../../generated/prisma/client';
 import { PrismaService } from '../../lib/prisma/prisma.service';
+import { NotificationService } from '../../lib/notification/notification.service';
 import { visitorKeyFromRequest } from '../../middleware/helpers/tracking';
 
 export type EnrollmentLinkStats = {
@@ -15,7 +16,10 @@ export type EnrollmentLinkStats = {
 
 @Injectable()
 export class EnrollmentTrackingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   private async findActiveLink(code: string) {
     const link = await this.prisma.enrollmentLink.findUnique({
@@ -38,6 +42,8 @@ export class EnrollmentTrackingService {
       },
     });
 
+    this.notifications.notifyEnrollmentLinkOpened(link.id, code);
+
     return { tracked: true };
   }
 
@@ -54,6 +60,8 @@ export class EnrollmentTrackingService {
         visitorKey: visitorKeyFromRequest(req),
       },
     });
+
+    this.notifications.notifyAgentDownloaded(link.id, code.trim());
 
     return { tracked: true };
   }
