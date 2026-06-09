@@ -7,6 +7,7 @@ import {
   deviceOfflineEmail,
   deviceOnlineEmail,
   enrollmentLinkOpenedEmail,
+  instantConnectOpenedEmail,
 } from './email-templates';
 
 @Injectable()
@@ -77,6 +78,13 @@ export class NotificationService {
     );
   }
 
+  notifyInstantConnectOpened(linkId: string, code: string): void {
+    this.fireAndForget(
+      this.sendInstantConnectOpened(linkId, code),
+      'connect-opened',
+    );
+  }
+
   private async sendEnrollmentLinkOpened(
     linkId: string,
     code: string,
@@ -94,6 +102,33 @@ export class NotificationService {
     const content = enrollmentLinkOpenedEmail({
       code,
       linkUrl: `${baseUrl.replace(/\/$/, '')}/${code}`,
+      openedAt: new Date(),
+    });
+
+    await this.sendTo(to, content);
+  }
+
+  private async sendInstantConnectOpened(
+    linkId: string,
+    code: string,
+  ): Promise<void> {
+    const link = await this.prisma.enrollmentLink.findUnique({
+      where: { id: linkId },
+      select: { createdByAdminId: true },
+    });
+    if (!link) return;
+
+    const to = await this.resolveRecipients(link.createdByAdminId);
+    const instantBase =
+      process.env.ENROLLMENT_INSTANT_BASE_URL?.trim() ||
+      process.env.ENROLLMENT_LINK_BASE_URL?.trim()?.replace(
+        /\/enroll\/?$/,
+        '/connect',
+      ) ||
+      'http://localhost:3001/connect';
+    const content = instantConnectOpenedEmail({
+      code,
+      connectUrl: `${instantBase.replace(/\/$/, '')}/${code}`,
       openedAt: new Date(),
     });
 

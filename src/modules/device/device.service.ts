@@ -3,7 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DeviceStatus } from '../../../generated/prisma/client';
+import {
+  DeviceStatus,
+  DeviceType,
+  EnrollmentLinkKind,
+} from '../../../generated/prisma/client';
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { NotificationService } from '../../lib/notification/notification.service';
 import { RedisService } from '../../lib/redis/redis.service';
@@ -11,7 +15,11 @@ import {
   generateDeviceToken,
   hashToken,
 } from '../../middleware/helpers/tokens';
-import { EnrollDeviceDto, HeartbeatDto } from './dto/device.dto';
+import {
+  EnrollBrowserDto,
+  EnrollDeviceDto,
+  HeartbeatDto,
+} from './dto/device.dto';
 
 const ONLINE_TTL = 60;
 
@@ -33,6 +41,7 @@ export class DeviceService {
         os: true,
         hostname: true,
         ipAddress: true,
+        deviceType: true,
         status: true,
         enrolledAt: true,
         lastSeenAt: true,
@@ -69,6 +78,7 @@ export class DeviceService {
         os: true,
         hostname: true,
         ipAddress: true,
+        deviceType: true,
         status: true,
         enrolledAt: true,
         lastSeenAt: true,
@@ -84,16 +94,46 @@ export class DeviceService {
     };
   }
 
-  async enroll(dto: EnrollDeviceDto) {
-    const link = await this.prisma.enrollmentLink.findUnique({
-      where: { code: dto.code },
-    });
-    if (!link) throw new BadRequestException('Invalid enrollment code');
+  private assertLinkSupportsAgent(link: {
+    kind: EnrollmentLinkKind;
+    usedAt: Date | null;
+    expiresAt: Date;
+  }) {
     if (link.usedAt)
       throw new BadRequestException('Enrollment link already used');
     if (link.expiresAt < new Date()) {
       throw new BadRequestException('Enrollment link expired');
     }
+    if (link.kind === EnrollmentLinkKind.INSTANT) {
+      throw new BadRequestException(
+        'This link is for instant browser connect only',
+      );
+    }
+  }
+
+  private assertLinkSupportsInstant(link: {
+    kind: EnrollmentLinkKind;
+    usedAt: Date | null;
+    expiresAt: Date;
+  }) {
+    if (link.usedAt)
+      throw new BadRequestException('Enrollment link already used');
+    if (link.expiresAt < new Date()) {
+      throw new BadRequestException('Enrollment link expired');
+    }
+    if (link.kind === EnrollmentLinkKind.AGENT) {
+      throw new BadRequestException(
+        'This link requires the Windows agent installer',
+      );
+    }
+  }
+
+  async enroll(dto: EnrollDeviceDto) {
+    const link = await this.prisma.enrollmentLink.findUnique({
+      where: { code: dto.code },
+    });
+    if (!link) throw new BadRequestException('Invalid enrollment code');
+    this.assertLinkSupportsAgent(link);
 
     const deviceToken = generateDeviceToken();
     const deviceTokenHash = hashToken(deviceToken);
@@ -105,6 +145,7 @@ export class DeviceService {
           os: dto.os,
           hostname: dto.hostname,
           ipAddress: dto.ipAddress,
+          deviceType: DeviceType.NATIVE,
           deviceTokenHash,
           status: DeviceStatus.ONLINE,
           lastSeenAt: new Date(),
@@ -135,6 +176,62 @@ export class DeviceService {
         name: device.name,
         hostname: device.hostname,
         os: device.os,
+        deviceType: DeviceType.NATIVE,
+      },
+    };
+  }
+
+  async enrollBrowser(dto: EnrollBrowserDto) {
+    const link = await this.prisma.enrollmentLink.findUnique({
+      where: { code: dto.code },
+    });
+    if (!link) throw new BadRequestException('Invalid enrollment code');
+    this.assertLinkSupportsInstant(link);
+
+    const deviceToken = generateDeviceToken();
+    const deviceTokenHash = hashToken(deviceToken);
+    const name = dto.name?.trim() || 'Browser Session';
+    const hostname = dto.hostname?.trim() || 'browser';
+    const os = dto.os?.trim() || 'Web Browser';
+
+    const device = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.device.create({
+        data: {
+          name,
+          os,
+          hostname,
+          deviceType: DeviceType.BROWSER,
+          deviceTokenHash,
+          status: DeviceStatus.ONLINE,
+          lastSeenAt: new Date(),
+        },
+      });
+      await tx.enrollmentLink.update({
+        where: { id: link.id },
+        data: { usedAt: new Date(), deviceId: created.id },
+      });
+      return created;
+    });
+
+    await this.redis.set(`device:online:${device.id}`, true, ONLINE_TTL);
+
+    this.notifications.notifyDeviceEnrolled({
+      adminId: link.createdByAdminId,
+      code: link.code,
+      deviceName: device.name,
+      hostname: device.hostname,
+      os: device.os,
+    });
+
+    return {
+      deviceId: device.id,
+      deviceToken,
+      device: {
+        id: device.id,
+        name: device.name,
+        hostname: device.hostname,
+        os: device.os,
+        deviceType: DeviceType.BROWSER,
       },
     };
   }

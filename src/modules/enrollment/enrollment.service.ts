@@ -4,6 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  DeviceType,
+  EnrollmentLinkKind,
+} from '../../../generated/prisma/client';
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { generateEnrollmentCode } from '../../middleware/helpers/tokens';
 import { EnrollmentTrackingService } from './enrollment-tracking.service';
@@ -27,26 +31,47 @@ export class EnrollmentService {
     private readonly tracking: EnrollmentTrackingService,
   ) {}
 
-  async createLink(adminId: string) {
+  private buildLinkUrls(code: string) {
+    const agentBase =
+      this.config.get<string>('ENROLLMENT_LINK_BASE_URL') ||
+      'http://localhost:3001/enroll';
+    const instantBase =
+      this.config.get<string>('ENROLLMENT_INSTANT_BASE_URL') ||
+      agentBase.replace(/\/enroll\/?$/, '/connect');
+
+    const agentUrl = `${agentBase.replace(/\/$/, '')}/${code}`;
+    const instantUrl = `${instantBase.replace(/\/$/, '')}/${code}`;
+    return { agentUrl, instantUrl };
+  }
+
+  async createLink(
+    adminId: string,
+    kind: EnrollmentLinkKind = EnrollmentLinkKind.INSTANT,
+  ) {
     const ttlHours = Number(
       this.config.get<string>('ENROLLMENT_LINK_TTL_HOURS') || 24,
     );
-    const baseUrl =
-      this.config.get<string>('ENROLLMENT_LINK_BASE_URL') ||
-      'http://localhost:3000/enroll';
     const code = generateEnrollmentCode();
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     const link = await this.prisma.enrollmentLink.create({
       data: {
         code,
+        kind,
         expiresAt,
         createdByAdminId: adminId,
       },
     });
 
-    const url = `${baseUrl.replace(/\/$/, '')}/${code}`;
-    return { ...link, url };
+    const { agentUrl, instantUrl } = this.buildLinkUrls(code);
+    const url =
+      kind === EnrollmentLinkKind.AGENT
+        ? agentUrl
+        : kind === EnrollmentLinkKind.INSTANT
+          ? instantUrl
+          : instantUrl;
+
+    return { ...link, url, agentUrl, instantUrl };
   }
 
   async listLinks(adminId: string) {
@@ -55,7 +80,13 @@ export class EnrollmentService {
       orderBy: { createdAt: 'desc' },
       include: {
         device: {
-          select: { id: true, name: true, hostname: true, status: true },
+          select: {
+            id: true,
+            name: true,
+            hostname: true,
+            status: true,
+            deviceType: true,
+          },
         },
       },
     });
@@ -64,18 +95,29 @@ export class EnrollmentService {
       links.map((link) => link.id),
     );
 
-    return links.map((link) => ({
-      ...link,
-      status: resolveLinkStatus(link),
-      stats: stats.get(link.id) ?? {
-        openCount: 0,
-        uniqueOpenCount: 0,
-        downloadCount: 0,
-        uniqueDownloadCount: 0,
-        lastOpenedAt: null,
-        lastDownloadAt: null,
-      },
-    }));
+    return links.map((link) => {
+      const { agentUrl, instantUrl } = this.buildLinkUrls(link.code);
+      return {
+        ...link,
+        agentUrl,
+        instantUrl,
+        url:
+          link.kind === EnrollmentLinkKind.AGENT
+            ? agentUrl
+            : link.kind === EnrollmentLinkKind.INSTANT
+              ? instantUrl
+              : instantUrl,
+        status: resolveLinkStatus(link),
+        stats: stats.get(link.id) ?? {
+          openCount: 0,
+          uniqueOpenCount: 0,
+          downloadCount: 0,
+          uniqueDownloadCount: 0,
+          lastOpenedAt: null,
+          lastDownloadAt: null,
+        },
+      };
+    });
   }
 
   async deleteLink(adminId: string, linkId: string) {
@@ -123,20 +165,103 @@ export class EnrollmentService {
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code },
       include: {
-        device: { select: { id: true, name: true, hostname: true } },
+        device: {
+          select: {
+            id: true,
+            name: true,
+            hostname: true,
+            deviceType: true,
+            revokedAt: true,
+          },
+        },
       },
     });
     if (!link) return { valid: false, reason: 'not_found' };
-    if (link.usedAt)
-      return { valid: false, reason: 'used', usedAt: link.usedAt };
     if (link.expiresAt < new Date()) {
       return { valid: false, reason: 'expired', expiresAt: link.expiresAt };
     }
+    if (link.usedAt) {
+      return {
+        valid: false,
+        reason: 'used',
+        usedAt: link.usedAt,
+        kind: link.kind,
+        device: link.device,
+      };
+    }
+    const { agentUrl, instantUrl } = this.buildLinkUrls(code);
     return {
       valid: true,
       code: link.code,
+      kind: link.kind,
       expiresAt: link.expiresAt,
+      agentUrl,
+      instantUrl,
       device: link.device,
+    };
+  }
+
+  async validateConnectCode(code: string) {
+    const link = await this.prisma.enrollmentLink.findUnique({
+      where: { code },
+      include: {
+        device: {
+          select: {
+            id: true,
+            name: true,
+            hostname: true,
+            deviceType: true,
+            revokedAt: true,
+          },
+        },
+      },
+    });
+    if (!link) return { valid: false, reason: 'not_found' };
+    if (link.expiresAt < new Date()) {
+      return { valid: false, reason: 'expired', expiresAt: link.expiresAt };
+    }
+    if (link.kind === EnrollmentLinkKind.AGENT) {
+      return { valid: false, reason: 'agent_only', kind: link.kind };
+    }
+
+    const { instantUrl } = this.buildLinkUrls(code);
+
+    if (!link.usedAt) {
+      return {
+        valid: true,
+        ready: false,
+        kind: link.kind,
+        expiresAt: link.expiresAt,
+        instantUrl,
+      };
+    }
+
+    const device = link.device;
+    if (
+      device &&
+      device.deviceType === DeviceType.BROWSER &&
+      !device.revokedAt
+    ) {
+      return {
+        valid: true,
+        ready: true,
+        reconnect: true,
+        kind: link.kind,
+        expiresAt: link.expiresAt,
+        instantUrl,
+        device: {
+          id: device.id,
+          name: device.name,
+          hostname: device.hostname,
+        },
+      };
+    }
+
+    return {
+      valid: false,
+      reason: 'used',
+      usedAt: link.usedAt,
+      kind: link.kind,
     };
   }
 }

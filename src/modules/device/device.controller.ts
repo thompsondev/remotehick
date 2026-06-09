@@ -11,7 +11,11 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { DeviceService } from './device.service';
-import { EnrollDeviceDto, HeartbeatDto } from './dto/device.dto';
+import {
+  EnrollBrowserDto,
+  EnrollDeviceDto,
+  HeartbeatDto,
+} from './dto/device.dto';
 import { Public } from '../../middleware/decorators/public.decorator';
 import {
   AdminRoute,
@@ -45,6 +49,12 @@ export class DeviceController {
   @Post('enroll')
   enroll(@Body() dto: EnrollDeviceDto) {
     return this.deviceService.enroll(dto);
+  }
+
+  @Public()
+  @Post('enroll-browser')
+  enrollBrowser(@Body() dto: EnrollBrowserDto) {
+    return this.deviceService.enrollBrowser(dto);
   }
 
   @DeviceRoute()

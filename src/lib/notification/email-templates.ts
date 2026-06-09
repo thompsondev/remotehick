@@ -54,6 +54,12 @@ export type EnrollmentLinkOpenedParams = {
   openedAt: Date;
 };
 
+export type InstantConnectOpenedParams = {
+  code: string;
+  connectUrl: string;
+  openedAt: Date;
+};
+
 export function enrollmentLinkOpenedEmail(params: EnrollmentLinkOpenedParams): {
   subject: string;
   html: string;
@@ -72,6 +78,36 @@ export function enrollmentLinkOpenedEmail(params: EnrollmentLinkOpenedParams): {
     'Enrollment Link Opened',
     `<p style="margin:0 0 8px;font-size:15px;color:#374151;line-height:1.6;">
       Someone has opened your enrollment link. They may be reviewing installation instructions or preparing to enroll a device.
+    </p>
+    ${detailsTable(
+      detailRow(
+        'Link code',
+        `<code style="background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:13px;">${params.code}</code>`,
+      ) + detailRow('Opened at', formatTimestamp(params.openedAt)),
+    )}`,
+  );
+
+  return { subject, html, text };
+}
+
+export function instantConnectOpenedEmail(params: InstantConnectOpenedParams): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const subject = `Instant connect link opened — ${params.code}`;
+  const text = [
+    `Someone opened your instant connect link.`,
+    ``,
+    `Code: ${params.code}`,
+    `Link: ${params.connectUrl}`,
+    `Time: ${formatTimestamp(params.openedAt)}`,
+  ].join('\n');
+
+  const html = layout(
+    'Instant Connect Link Opened',
+    `<p style="margin:0 0 8px;font-size:15px;color:#374151;line-height:1.6;">
+      Someone has opened your instant connect link and may share their screen shortly. No installation is required.
     </p>
     ${detailsTable(
       detailRow(

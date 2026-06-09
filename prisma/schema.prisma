@@ -12,6 +12,17 @@ enum DeviceStatus {
   OFFLINE
 }
 
+enum DeviceType {
+  NATIVE
+  BROWSER
+}
+
+enum EnrollmentLinkKind {
+  AGENT
+  INSTANT
+  BOTH
+}
+
 enum SessionStatus {
   PENDING
   ACTIVE
@@ -21,6 +32,7 @@ enum SessionStatus {
 enum EnrollmentLinkEventType {
   OPEN
   DOWNLOAD
+  CONNECT
 }
 
 model Admin {
@@ -41,6 +53,7 @@ model Device {
   os              String
   hostname        String
   ipAddress       String?
+  deviceType      DeviceType   @default(NATIVE)
   status          DeviceStatus @default(OFFLINE)
   deviceTokenHash String
   enrolledAt      DateTime     @default(now())
@@ -52,13 +65,14 @@ model Device {
 }
 
 model EnrollmentLink {
-  id               String    @id @default(cuid())
-  code             String    @unique
+  id               String             @id @default(cuid())
+  code             String             @unique
+  kind             EnrollmentLinkKind @default(BOTH)
   expiresAt        DateTime
   usedAt           DateTime?
-  createdAt        DateTime  @default(now())
+  createdAt        DateTime           @default(now())
   createdByAdminId String
-  deviceId         String?   @unique
+  deviceId         String?            @unique
 
   createdByAdmin Admin   @relation(fields: [createdByAdminId], references: [id])
   device         Device? @relation(fields: [deviceId], references: [id])

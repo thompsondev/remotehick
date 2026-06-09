@@ -47,6 +47,37 @@ export class EnrollmentTrackingService {
     return { tracked: true };
   }
 
+  async trackConnect(code: string, req: Request) {
+    const link = await this.findActiveLink(code);
+    if (!link) {
+      const usedLink = await this.prisma.enrollmentLink.findUnique({
+        where: { code },
+      });
+      if (!usedLink?.usedAt) return { tracked: false };
+
+      await this.prisma.enrollmentLinkEvent.create({
+        data: {
+          linkId: usedLink.id,
+          type: EnrollmentLinkEventType.CONNECT,
+          visitorKey: visitorKeyFromRequest(req),
+        },
+      });
+      return { tracked: true };
+    }
+
+    await this.prisma.enrollmentLinkEvent.create({
+      data: {
+        linkId: link.id,
+        type: EnrollmentLinkEventType.CONNECT,
+        visitorKey: visitorKeyFromRequest(req),
+      },
+    });
+
+    this.notifications.notifyInstantConnectOpened(link.id, code);
+
+    return { tracked: true };
+  }
+
   async trackDownload(code: string | undefined, req: Request) {
     if (!code?.trim()) return { tracked: false };
 

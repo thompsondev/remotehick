@@ -13,6 +13,7 @@ import type { Request } from 'express';
 import { EnrollmentService } from './enrollment.service';
 import { EnrollmentTrackingService } from './enrollment-tracking.service';
 import { BulkDeleteEnrollmentLinksDto } from './dto/bulk-delete-links.dto';
+import { CreateEnrollmentLinkDto } from './dto/create-link.dto';
 import { Public } from '../../middleware/decorators/public.decorator';
 import {
   AdminRoute,
@@ -31,8 +32,11 @@ export class EnrollmentController {
   @AdminRoute()
   @UseGuards(AdminJwtGuard)
   @Post()
-  createLink(@Req() req: Request & { admin: AdminPayload }) {
-    return this.enrollmentService.createLink(req.admin.sub);
+  createLink(
+    @Req() req: Request & { admin: AdminPayload },
+    @Body() body: CreateEnrollmentLinkDto,
+  ) {
+    return this.enrollmentService.createLink(req.admin.sub, body.kind);
   }
 
   @AdminRoute()
@@ -76,9 +80,21 @@ export class EnrollmentController {
   }
 
   @Public()
+  @Get(':code/validate-connect')
+  validateConnect(@Param('code') code: string) {
+    return this.enrollmentService.validateConnectCode(code);
+  }
+
+  @Public()
   @Post(':code/track/open')
   trackOpen(@Param('code') code: string, @Req() req: Request) {
     return this.trackingService.trackOpen(code, req);
+  }
+
+  @Public()
+  @Post(':code/track/connect')
+  trackConnect(@Param('code') code: string, @Req() req: Request) {
+    return this.trackingService.trackConnect(code, req);
   }
 
   @AdminRoute()

@@ -23,3 +23,20 @@ export class HeartbeatDto {
   @IsString()
   ipAddress?: string;
 }
+
+export class EnrollBrowserDto {
+  @IsString()
+  code: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  os?: string;
+
+  @IsOptional()
+  @IsString()
+  hostname?: string;
+}
