@@ -111,9 +111,12 @@ export class EnrollmentService {
         stats: stats.get(link.id) ?? {
           openCount: 0,
           uniqueOpenCount: 0,
+          connectCount: 0,
+          uniqueConnectCount: 0,
           downloadCount: 0,
           uniqueDownloadCount: 0,
           lastOpenedAt: null,
+          lastConnectedAt: null,
           lastDownloadAt: null,
         },
       };

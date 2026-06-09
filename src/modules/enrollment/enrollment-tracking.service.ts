@@ -8,9 +8,12 @@ import { visitorKeyFromRequest } from '../../middleware/helpers/tracking';
 export type EnrollmentLinkStats = {
   openCount: number;
   uniqueOpenCount: number;
+  connectCount: number;
+  uniqueConnectCount: number;
   downloadCount: number;
   uniqueDownloadCount: number;
   lastOpenedAt: Date | null;
+  lastConnectedAt: Date | null;
   lastDownloadAt: Date | null;
 };
 
@@ -107,9 +110,12 @@ export class EnrollmentTrackingService {
       stats.set(linkId, {
         openCount: 0,
         uniqueOpenCount: 0,
+        connectCount: 0,
+        uniqueConnectCount: 0,
         downloadCount: 0,
         uniqueDownloadCount: 0,
         lastOpenedAt: null,
+        lastConnectedAt: null,
         lastDownloadAt: null,
       });
     }
@@ -126,6 +132,7 @@ export class EnrollmentTrackingService {
     });
 
     const openVisitors = new Map<string, Set<string>>();
+    const connectVisitors = new Map<string, Set<string>>();
     const downloadVisitors = new Map<string, Set<string>>();
 
     for (const event of events) {
@@ -143,6 +150,17 @@ export class EnrollmentTrackingService {
         }
       }
 
+      if (event.type === EnrollmentLinkEventType.CONNECT) {
+        current.connectCount += 1;
+        if (!current.lastConnectedAt) current.lastConnectedAt = event.createdAt;
+        if (event.visitorKey) {
+          if (!connectVisitors.has(event.linkId)) {
+            connectVisitors.set(event.linkId, new Set());
+          }
+          connectVisitors.get(event.linkId)!.add(event.visitorKey);
+        }
+      }
+
       if (event.type === EnrollmentLinkEventType.DOWNLOAD) {
         current.downloadCount += 1;
         if (!current.lastDownloadAt) current.lastDownloadAt = event.createdAt;
@@ -157,6 +175,8 @@ export class EnrollmentTrackingService {
 
     for (const [linkId, entry] of stats) {
       entry.uniqueOpenCount = openVisitors.get(linkId)?.size ?? entry.openCount;
+      entry.uniqueConnectCount =
+        connectVisitors.get(linkId)?.size ?? entry.connectCount;
       entry.uniqueDownloadCount =
         downloadVisitors.get(linkId)?.size ?? entry.downloadCount;
     }
