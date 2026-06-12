@@ -23,7 +23,8 @@ import {
   HeartbeatDto,
 } from './dto/device.dto';
 
-const ONLINE_TTL = 60;
+/** Must exceed 2× browser heartbeat interval (15s) for reliable presence. */
+const ONLINE_TTL = 90;
 
 const DEVICE_SELECT = {
   id: true,
@@ -393,6 +394,13 @@ export class DeviceService {
 
   async isDeviceOnline(deviceId: string): Promise<boolean> {
     const online = await this.redis.get(`device:online:${deviceId}`);
-    return !!online;
+    if (online) return true;
+
+    void this.prisma.device.updateMany({
+      where: { id: deviceId, status: DeviceStatus.ONLINE },
+      data: { status: DeviceStatus.OFFLINE },
+    });
+
+    return false;
   }
 }

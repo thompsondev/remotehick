@@ -93,9 +93,9 @@ export class SignalingGateway
       | undefined;
     if (role && id) {
       this.signaling.unregisterSocket(client.id, role, id);
-      if (role === 'device') {
-        void this.deviceService.markOffline(id);
-      }
+      // Device presence is driven by heartbeats, not socket disconnects.
+      // A user can stay online while sharing even if the socket reconnects
+      // or the admin leaves a session view.
     }
   }
 
