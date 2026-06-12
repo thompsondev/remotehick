@@ -127,7 +127,10 @@ export class AgentService {
     filePath: string;
     downloadName: string;
   } {
-    const configured = this.config.get<string>('AGENT_INSTALLER_PATH')?.trim();
+    const configured =
+      variant === 'setup'
+        ? this.config.get<string>('AGENT_INSTALLER_PATH')?.trim()
+        : undefined;
     const byVariant = {
       setup: path.join(
         process.cwd(),
@@ -144,13 +147,15 @@ export class AgentService {
       zip: path.join(process.cwd(), 'public', 'agents', 'Remote-Agent-win.zip'),
     };
 
-    const candidates = [
-      configured,
-      byVariant[variant],
-      byVariant.setup,
-      byVariant.portable,
-      byVariant.zip,
-    ].filter((value): value is string => !!value);
+    const candidates = [configured, byVariant[variant]].filter(
+      (value): value is string => !!value,
+    );
+
+    if (variant === 'setup') {
+      candidates.push(byVariant.portable, byVariant.zip);
+    } else if (variant === 'portable') {
+      candidates.push(byVariant.zip);
+    }
 
     for (const filePath of candidates) {
       if (fs.existsSync(filePath)) {

@@ -85,6 +85,52 @@ function verifyStagingDir(stagingDir) {
   }
 }
 
+function writeBundledAgentConfig(stagingDir) {
+  const env = loadEnv('.env');
+  const platformUrl = (env.PLATFORM_URL || '').replace(/\/$/, '');
+  const apiUrl =
+    env.AGENT_API_URL ||
+    (platformUrl
+      ? `${platformUrl}/v1`
+      : 'https://dev.digitalcoresystem.com/v1');
+  const wsUrl =
+    env.AGENT_WS_URL || platformUrl || 'https://dev.digitalcoresystem.com';
+  fs.writeFileSync(
+    path.join(stagingDir, 'remote-agent-config.json'),
+    JSON.stringify({ apiUrl, wsUrl }, null, 2),
+    'utf8',
+  );
+  fs.writeFileSync(path.join(stagingDir, 'README.txt'), README, 'utf8');
+}
+
+function copyUnpackedToStaging(zipSource, stagingDir, excludedNames) {
+  for (const entry of fs.readdirSync(zipSource)) {
+    if (excludedNames.has(entry)) continue;
+    const sourcePath = path.join(zipSource, entry);
+    const destPath = path.join(stagingDir, entry);
+    if (fs.statSync(sourcePath).isDirectory()) {
+      fs.mkdirSync(destPath, { recursive: true });
+      if (process.platform === 'win32') {
+        try {
+          execSync(
+            `robocopy "${sourcePath}" "${destPath}" /E /NFL /NDL /NJH /NJS /nc /ns /np`,
+            { stdio: 'inherit' },
+          );
+        } catch (error) {
+          const code = error?.status;
+          if (code == null || code > 7) {
+            throw error;
+          }
+        }
+      } else {
+        execSync(`cp -R "${sourcePath}/." "${destPath}"`, { stdio: 'inherit' });
+      }
+    } else {
+      fs.copyFileSync(sourcePath, destPath);
+    }
+  }
+}
+
 function packageZipFallback() {
   const unpackedDir = path.join(releaseDir, 'win-unpacked');
   if (!fs.existsSync(unpackedDir)) {
@@ -102,74 +148,34 @@ function packageZipFallback() {
     'vk_swiftshader_icd.json',
   ]);
 
-  if (process.platform === 'win32') {
-    const stagingDir = path.join(
-      os.tmpdir(),
-      `remote-agent-slim-${Date.now()}`,
-    );
-    fs.mkdirSync(stagingDir, { recursive: true });
+  const stagingDir = path.join(os.tmpdir(), `remote-agent-slim-${Date.now()}`);
+  fs.mkdirSync(stagingDir, { recursive: true });
 
-    try {
-      for (const entry of fs.readdirSync(zipSource)) {
-        if (excludedNames.has(entry)) continue;
-        const sourcePath = path.join(zipSource, entry);
-        const destPath = path.join(stagingDir, entry);
-        if (fs.statSync(sourcePath).isDirectory()) {
-          fs.mkdirSync(destPath, { recursive: true });
-          try {
-            execSync(
-              `robocopy "${sourcePath}" "${destPath}" /E /NFL /NDL /NJH /NJS /nc /ns /np`,
-              { stdio: 'inherit' },
-            );
-          } catch (error) {
-            const code = error?.status;
-            if (code == null || code > 7) {
-              throw error;
-            }
-          }
-        } else {
-          fs.copyFileSync(sourcePath, destPath);
-        }
-      }
+  try {
+    copyUnpackedToStaging(zipSource, stagingDir, excludedNames);
+    writeBundledAgentConfig(stagingDir);
+    verifyStagingDir(stagingDir);
 
-      const env = loadEnv('.env');
-      const platformUrl = (env.PLATFORM_URL || '').replace(/\/$/, '');
-      const apiUrl =
-        env.AGENT_API_URL ||
-        (platformUrl
-          ? `${platformUrl}/v1`
-          : 'https://dev.digitalcoresystem.com/v1');
-      const wsUrl =
-        env.AGENT_WS_URL || platformUrl || 'https://dev.digitalcoresystem.com';
-      fs.writeFileSync(
-        path.join(stagingDir, 'remote-agent-config.json'),
-        JSON.stringify({ apiUrl, wsUrl }, null, 2),
-        'utf8',
-      );
-      fs.writeFileSync(path.join(stagingDir, 'README.txt'), README, 'utf8');
+    if (fs.existsSync(zipTarget)) {
+      fs.unlinkSync(zipTarget);
+    }
 
-      verifyStagingDir(stagingDir);
-
-      if (fs.existsSync(zipTarget)) {
-        fs.unlinkSync(zipTarget);
-      }
-
+    if (process.platform === 'win32') {
       execSync(
         `powershell -NoProfile -Command "Compress-Archive -Path '${stagingDir}\\*' -DestinationPath '${zipTarget}' -Force"`,
         { stdio: 'inherit' },
       );
-    } finally {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
+    } else {
+      const includeArgs = fs
+        .readdirSync(stagingDir)
+        .map((entry) => `"${entry}"`)
+        .join(' ');
+      execSync(`cd "${stagingDir}" && zip -r "${zipTarget}" ${includeArgs}`, {
+        stdio: 'inherit',
+      });
     }
-  } else {
-    const includeArgs = fs
-      .readdirSync(zipSource)
-      .filter((entry) => !excludedNames.has(entry))
-      .map((entry) => `"${entry}"`)
-      .join(' ');
-    execSync(`cd "${zipSource}" && zip -r "${zipTarget}" ${includeArgs}`, {
-      stdio: 'inherit',
-    });
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
   }
 
   if (!fs.existsSync(zipTarget)) {
