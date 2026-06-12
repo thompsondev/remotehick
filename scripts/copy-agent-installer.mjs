@@ -161,6 +161,22 @@ function packageZipFallback() {
     } finally {
       fs.rmSync(stagingDir, { recursive: true, force: true });
     }
+  } else {
+    const includeArgs = fs
+      .readdirSync(zipSource)
+      .filter((entry) => !excludedNames.has(entry))
+      .map((entry) => `"${entry}"`)
+      .join(' ');
+    execSync(`cd "${zipSource}" && zip -r "${zipTarget}" ${includeArgs}`, {
+      stdio: 'inherit',
+    });
+  }
+
+  if (!fs.existsSync(zipTarget)) {
+    console.error(
+      `Zip packaging failed: ${zipTarget} was not created on this platform.`,
+    );
+    process.exit(1);
   }
 
   const sizeMb = (fs.statSync(zipTarget).size / (1024 * 1024)).toFixed(1);

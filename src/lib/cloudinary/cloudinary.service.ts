@@ -39,6 +39,12 @@ export class CloudinaryService {
     );
   }
 
+  getAgentZipPartUrls(): string[] {
+    return this.parsePartUrls(
+      this.config.get<string>('CLOUDINARY_AGENT_ZIP_PARTS')?.trim(),
+    );
+  }
+
   private parsePartUrls(raw?: string): string[] {
     if (!raw) {
       return [];
@@ -77,17 +83,17 @@ export class CloudinaryService {
 
     const publicId =
       this.config.get<string>('CLOUDINARY_AGENT_PUBLIC_ID')?.trim() ||
-      'remote-agent/Remote-Agent-win';
+      'remote-agent/Remote-Agent-Setup';
 
     const resourceType =
       this.config.get<string>('CLOUDINARY_AGENT_RESOURCE_TYPE')?.trim() ||
-      'video';
+      'raw';
 
     return cloudinary.url(publicId, {
       resource_type: resourceType,
       secure: true,
       sign_url: false,
-      flags: 'attachment:Remote-Agent-win.zip',
+      flags: 'attachment:Remote-Agent-Setup.exe',
     });
   }
 }

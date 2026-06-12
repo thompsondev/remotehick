@@ -54,7 +54,7 @@ export function getAgentInstallerPath(env) {
     portable: 'public/agents/Remote-Agent-Portable.exe',
     zip: 'public/agents/Remote-Agent-win.zip',
   };
-  return path.resolve(
-    env.AGENT_INSTALLER_PATH || defaults[variant] || defaults.setup,
-  );
+  const configured =
+    variant === 'setup' ? env.AGENT_INSTALLER_PATH?.trim() : undefined;
+  return path.resolve(configured || defaults[variant] || defaults.setup);
 }

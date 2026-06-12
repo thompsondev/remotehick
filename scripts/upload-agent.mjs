@@ -5,7 +5,7 @@ async function main() {
   const variant = process.argv[2]?.trim()?.toLowerCase();
 
   try {
-    if (variant === 'setup' || variant === 'portable') {
+    if (variant === 'setup' || variant === 'portable' || variant === 'zip') {
       await uploadAgentToCloudinary({ variant });
       console.log(`\n${variant} agent hosting ready via Cloudinary.`);
       return;
@@ -15,6 +15,8 @@ async function main() {
     console.log('\nSetup installer uploaded.');
     await uploadAgentToCloudinary({ variant: 'portable' });
     console.log('\nPortable installer uploaded.');
+    await uploadAgentToCloudinary({ variant: 'zip' });
+    console.log('\nZip installer uploaded.');
     console.log('\nAgent hosting ready via Cloudinary.');
     return;
   } catch (error) {

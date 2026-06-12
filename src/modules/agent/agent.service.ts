@@ -67,13 +67,29 @@ export class AgentService {
     variant: 'setup' | 'portable' | 'zip',
   ): string[] {
     if (variant === 'portable') {
-      const portableParts = this.cloudinary.getAgentPortablePartUrls();
-      if (portableParts.length > 0) {
-        return portableParts;
-      }
+      return this.cloudinary.getAgentPortablePartUrls();
     }
-
+    if (variant === 'zip') {
+      return this.cloudinary.getAgentZipPartUrls();
+    }
     return this.cloudinary.getAgentPartUrls();
+  }
+
+  private resolveStreamDownloadName(
+    variant: 'setup' | 'portable' | 'zip',
+  ): string {
+    const envKey = {
+      setup: 'AGENT_DOWNLOAD_FILENAME',
+      portable: 'AGENT_PORTABLE_DOWNLOAD_FILENAME',
+      zip: 'AGENT_ZIP_DOWNLOAD_FILENAME',
+    }[variant];
+    const fallback = {
+      setup: 'Remote-Agent-Setup.exe',
+      portable: 'Remote-Agent-Portable.exe',
+      zip: 'Remote-Agent-win.zip',
+    }[variant];
+
+    return this.config.get<string>(envKey)?.trim() || fallback;
   }
 
   private async streamCloudinaryParts(
@@ -98,13 +114,7 @@ export class AgentService {
       }
     }
 
-    const downloadName =
-      (variant === 'portable'
-        ? this.config.get<string>('AGENT_PORTABLE_DOWNLOAD_FILENAME')?.trim()
-        : this.config.get<string>('AGENT_DOWNLOAD_FILENAME')?.trim()) ||
-      (variant === 'portable'
-        ? 'Remote-Agent-Portable.exe'
-        : 'Remote-Agent-Setup.exe');
+    const downloadName = this.resolveStreamDownloadName(variant);
 
     return {
       kind: 'stream',

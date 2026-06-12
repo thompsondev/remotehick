@@ -26,6 +26,13 @@ const VARIANT_CONFIG = {
     defaultFilename: 'Remote-Agent-Portable.exe',
     installerVariant: 'portable',
   },
+  zip: {
+    publicIdBase: 'remote-agent/Remote-Agent-win',
+    partsKey: 'CLOUDINARY_AGENT_ZIP_PARTS',
+    filenameKey: 'AGENT_ZIP_DOWNLOAD_FILENAME',
+    defaultFilename: 'Remote-Agent-win.zip',
+    installerVariant: 'zip',
+  },
 };
 
 function sleep(ms) {
@@ -79,8 +86,7 @@ export async function uploadAgentToCloudinary(options = {}) {
   const cloudName = env.CLOUDINARY_CLOUD_NAME?.trim();
   const apiKey = env.CLOUDINARY_API_KEY?.trim();
   const apiSecret = env.CLOUDINARY_API_SECRET?.trim();
-  const publicIdBase =
-    env.CLOUDINARY_AGENT_PUBLIC_ID?.trim() || cfg.publicIdBase;
+  const publicIdBase = cfg.publicIdBase;
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error(
@@ -143,7 +149,7 @@ export async function uploadAgentToCloudinary(options = {}) {
 
   process.stdout.write('\n');
 
-  const downloadName = path.basename(filePath);
+  const downloadName = path.basename(filePath) || cfg.defaultFilename;
   const savedValues = {
     [cfg.partsKey]: partUrls.join('|'),
     [cfg.filenameKey]: downloadName,
