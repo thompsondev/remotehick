@@ -9,9 +9,7 @@ export class CloudinaryService {
   constructor(private readonly config: ConfigService) {
     const cloudName = this.config.get<string>('CLOUDINARY_CLOUD_NAME')?.trim();
     const apiKey = this.config.get<string>('CLOUDINARY_API_KEY')?.trim();
-    const apiSecret = this.config
-      .get<string>('CLOUDINARY_API_SECRET')
-      ?.trim();
+    const apiSecret = this.config.get<string>('CLOUDINARY_API_SECRET')?.trim();
 
     this.configured = !!(cloudName && apiKey && apiSecret);
 
@@ -30,7 +28,18 @@ export class CloudinaryService {
   }
 
   getAgentPartUrls(): string[] {
-    const raw = this.config.get<string>('CLOUDINARY_AGENT_PARTS')?.trim();
+    return this.parsePartUrls(
+      this.config.get<string>('CLOUDINARY_AGENT_PARTS')?.trim(),
+    );
+  }
+
+  getAgentPortablePartUrls(): string[] {
+    return this.parsePartUrls(
+      this.config.get<string>('CLOUDINARY_AGENT_PORTABLE_PARTS')?.trim(),
+    );
+  }
+
+  private parsePartUrls(raw?: string): string[] {
     if (!raw) {
       return [];
     }

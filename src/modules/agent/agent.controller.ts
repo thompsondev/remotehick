@@ -31,6 +31,13 @@ export class AgentController {
     required: false,
     description: 'Enrollment link code for download tracking',
   })
+  @ApiQuery({
+    name: 'variant',
+    required: false,
+    description:
+      'Installer variant: setup (default one-click NSIS), portable, or zip',
+    enum: ['setup', 'portable', 'zip'],
+  })
   @ApiProduces('application/octet-stream')
   @ApiResponse({ status: 200, description: 'Installer file download' })
   @ApiResponse({
@@ -43,12 +50,14 @@ export class AgentController {
   })
   async download(
     @Query('code') code: string | undefined,
+    @Query('variant') variant: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     await this.trackingService.trackDownload(code, req);
 
-    const target = await this.agentService.resolveDownloadTarget();
+    const target =
+      await this.agentService.resolveDownloadTargetFromQuery(variant);
 
     if (target.kind === 'redirect') {
       res.redirect(302, target.url);
@@ -56,7 +65,10 @@ export class AgentController {
     }
 
     if (target.kind === 'stream') {
-      res.setHeader('Content-Type', 'application/zip');
+      const contentType = target.downloadName.endsWith('.zip')
+        ? 'application/zip'
+        : 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
       res.setHeader(
         'Content-Disposition',
         `attachment; filename="${target.downloadName}"`,

@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { createRequire } from 'module';
 import { v2 as cloudinary } from 'cloudinary';
 import {
@@ -9,6 +10,23 @@ import {
 
 const require = createRequire(import.meta.url);
 const cloudinaryUploader = require('cloudinary/lib/uploader');
+
+const VARIANT_CONFIG = {
+  setup: {
+    publicIdBase: 'remote-agent/Remote-Agent-Setup',
+    partsKey: 'CLOUDINARY_AGENT_PARTS',
+    filenameKey: 'AGENT_DOWNLOAD_FILENAME',
+    defaultFilename: 'Remote-Agent-Setup.exe',
+    installerVariant: 'setup',
+  },
+  portable: {
+    publicIdBase: 'remote-agent/Remote-Agent-Portable',
+    partsKey: 'CLOUDINARY_AGENT_PORTABLE_PARTS',
+    filenameKey: 'AGENT_PORTABLE_DOWNLOAD_FILENAME',
+    defaultFilename: 'Remote-Agent-Portable.exe',
+    installerVariant: 'portable',
+  },
+};
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,14 +58,29 @@ function uploadPartBuffer(buffer, options, attempt = 1) {
   });
 }
 
-export async function uploadAgentToCloudinary(
-  env = { ...loadEnv(), ...process.env },
-) {
+function resolveVariant(options = {}) {
+  const fromOptions = options.variant?.trim()?.toLowerCase();
+  if (fromOptions && VARIANT_CONFIG[fromOptions]) return fromOptions;
+
+  const fromArgv = process.argv[2]?.trim()?.toLowerCase();
+  if (fromArgv && VARIANT_CONFIG[fromArgv]) return fromArgv;
+
+  const fromEnv = process.env.AGENT_INSTALLER_VARIANT?.trim()?.toLowerCase();
+  if (fromEnv && VARIANT_CONFIG[fromEnv]) return fromEnv;
+
+  return 'setup';
+}
+
+export async function uploadAgentToCloudinary(options = {}) {
+  const variant = resolveVariant(options);
+  const cfg = VARIANT_CONFIG[variant];
+  const env = { ...loadEnv(), ...process.env };
+
   const cloudName = env.CLOUDINARY_CLOUD_NAME?.trim();
   const apiKey = env.CLOUDINARY_API_KEY?.trim();
   const apiSecret = env.CLOUDINARY_API_SECRET?.trim();
   const publicIdBase =
-    env.CLOUDINARY_AGENT_PUBLIC_ID?.trim() || 'remote-agent/Remote-Agent-win';
+    env.CLOUDINARY_AGENT_PUBLIC_ID?.trim() || cfg.publicIdBase;
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error(
@@ -55,7 +88,10 @@ export async function uploadAgentToCloudinary(
     );
   }
 
-  const filePath = getAgentInstallerPath(env);
+  const filePath = getAgentInstallerPath({
+    ...env,
+    AGENT_INSTALLER_VARIANT: cfg.installerVariant,
+  });
   if (!fs.existsSync(filePath)) {
     throw new Error(
       `Installer not found at ${filePath}. Run pnpm copy:agent first.`,
@@ -75,7 +111,7 @@ export async function uploadAgentToCloudinary(
   const partCount = Math.ceil(totalSize / partSize);
 
   console.log(
-    `Uploading ${sizeMb} MB to Cloudinary in ${partCount} parts (Free plan: <=10 MB each)...`,
+    `Uploading ${variant} (${sizeMb} MB) to Cloudinary in ${partCount} parts...`,
   );
 
   const fd = fs.openSync(filePath, 'r');
@@ -107,18 +143,25 @@ export async function uploadAgentToCloudinary(
 
   process.stdout.write('\n');
 
-  saveEnvValues({
-    CLOUDINARY_AGENT_PARTS: partUrls.join('|'),
-    CLOUDINARY_AGENT_RESOURCE_TYPE: 'raw',
-    AGENT_DOWNLOAD_PROVIDER: 'cloudinary',
-  });
+  const downloadName = path.basename(filePath);
+  const savedValues = {
+    [cfg.partsKey]: partUrls.join('|'),
+    [cfg.filenameKey]: downloadName,
+  };
 
-  console.log('Uploaded to Cloudinary');
+  if (variant === 'setup') {
+    savedValues.CLOUDINARY_AGENT_RESOURCE_TYPE = 'raw';
+    savedValues.AGENT_DOWNLOAD_PROVIDER = 'cloudinary';
+  }
+
+  saveEnvValues(savedValues);
+
+  console.log(`Uploaded ${variant} to Cloudinary`);
   console.log(`parts: ${partUrls.length}`);
   partUrls.forEach((url, index) => console.log(`  ${index + 1}. ${url}`));
-  console.log('Saved CLOUDINARY_AGENT_PARTS to .env');
+  console.log(`Saved ${cfg.partsKey} to .env`);
 
-  return { partUrls };
+  return { variant, partUrls };
 }
 
 if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {

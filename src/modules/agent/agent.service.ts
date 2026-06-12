@@ -17,7 +17,9 @@ export class AgentService {
     private readonly cloudinary: CloudinaryService,
   ) {}
 
-  resolveDownloadTarget(): Promise<AgentDownloadTarget> | AgentDownloadTarget {
+  resolveDownloadTarget(
+    variant: 'setup' | 'portable' | 'zip' = 'setup',
+  ): Promise<AgentDownloadTarget> | AgentDownloadTarget {
     const externalUrl = this.config.get<string>('AGENT_DOWNLOAD_URL')?.trim();
     if (externalUrl) {
       return { kind: 'redirect', url: externalUrl };
@@ -38,19 +40,45 @@ export class AgentService {
       return { kind: 'redirect', url: cloudinaryUrl };
     }
 
-    const partUrls = this.cloudinary.getAgentPartUrls();
+    const partUrls = this.getCloudinaryPartUrls(variant);
     if (partUrls.length > 0) {
-      return this.streamCloudinaryParts(partUrls);
+      return this.streamCloudinaryParts(partUrls, variant);
     }
 
     return {
       kind: 'file',
-      ...this.resolveInstallerPath(),
+      ...this.resolveInstallerPath(variant),
     };
+  }
+
+  private normalizeVariant(value?: string): 'setup' | 'portable' | 'zip' {
+    const normalized = value?.trim().toLowerCase();
+    if (normalized === 'portable' || normalized === 'zip') return normalized;
+    return 'setup';
+  }
+
+  resolveDownloadTargetFromQuery(
+    variant?: string,
+  ): Promise<AgentDownloadTarget> | AgentDownloadTarget {
+    return this.resolveDownloadTarget(this.normalizeVariant(variant));
+  }
+
+  private getCloudinaryPartUrls(
+    variant: 'setup' | 'portable' | 'zip',
+  ): string[] {
+    if (variant === 'portable') {
+      const portableParts = this.cloudinary.getAgentPortablePartUrls();
+      if (portableParts.length > 0) {
+        return portableParts;
+      }
+    }
+
+    return this.cloudinary.getAgentPartUrls();
   }
 
   private async streamCloudinaryParts(
     partUrls: string[],
+    variant: 'setup' | 'portable' | 'zip' = 'setup',
   ): Promise<AgentDownloadTarget> {
     async function* mergeParts() {
       for (const url of partUrls) {
@@ -70,20 +98,48 @@ export class AgentService {
       }
     }
 
+    const downloadName =
+      (variant === 'portable'
+        ? this.config.get<string>('AGENT_PORTABLE_DOWNLOAD_FILENAME')?.trim()
+        : this.config.get<string>('AGENT_DOWNLOAD_FILENAME')?.trim()) ||
+      (variant === 'portable'
+        ? 'Remote-Agent-Portable.exe'
+        : 'Remote-Agent-Setup.exe');
+
     return {
       kind: 'stream',
       stream: Readable.from(mergeParts()),
-      downloadName: 'Remote-Agent-win.zip',
+      downloadName,
     };
   }
 
-  resolveInstallerPath(): { filePath: string; downloadName: string } {
+  resolveInstallerPath(variant: 'setup' | 'portable' | 'zip' = 'setup'): {
+    filePath: string;
+    downloadName: string;
+  } {
     const configured = this.config.get<string>('AGENT_INSTALLER_PATH')?.trim();
+    const byVariant = {
+      setup: path.join(
+        process.cwd(),
+        'public',
+        'agents',
+        'Remote-Agent-Setup.exe',
+      ),
+      portable: path.join(
+        process.cwd(),
+        'public',
+        'agents',
+        'Remote-Agent-Portable.exe',
+      ),
+      zip: path.join(process.cwd(), 'public', 'agents', 'Remote-Agent-win.zip'),
+    };
+
     const candidates = [
       configured,
-      path.join(process.cwd(), 'public', 'agents', 'Remote-Agent-Setup.exe'),
-      path.join(process.cwd(), 'public', 'agents', 'Remote-Agent-Portable.exe'),
-      path.join(process.cwd(), 'public', 'agents', 'Remote-Agent-win.zip'),
+      byVariant[variant],
+      byVariant.setup,
+      byVariant.portable,
+      byVariant.zip,
     ].filter((value): value is string => !!value);
 
     for (const filePath of candidates) {
