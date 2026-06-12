@@ -86,6 +86,12 @@ export class EnrollmentController {
   }
 
   @Public()
+  @Get(':code/agent-bootstrap')
+  agentBootstrap(@Param('code') code: string) {
+    return this.enrollmentService.validateAgentCode(code);
+  }
+
+  @Public()
   @Post(':code/track/open')
   trackOpen(@Param('code') code: string, @Req() req: Request) {
     return this.trackingService.trackOpen(code, req);

@@ -68,9 +68,7 @@ export class EnrollmentService {
     );
     const code = generateEnrollmentCode();
     const expiresAt =
-      ttlHours > 0
-        ? new Date(Date.now() + ttlHours * 60 * 60 * 1000)
-        : null;
+      ttlHours > 0 ? new Date(Date.now() + ttlHours * 60 * 60 * 1000) : null;
 
     const link = await this.prisma.enrollmentLink.create({
       data: {
@@ -206,6 +204,68 @@ export class EnrollmentService {
       deviceCount: link.devices.length,
       devices: link.devices,
     };
+  }
+
+  getAgentBootstrap(
+    code: string,
+    link: {
+      code: string;
+      kind: EnrollmentLinkKind;
+      expiresAt: Date | null;
+    },
+  ) {
+    const apiBase =
+      this.config.get<string>('PLATFORM_URL')?.replace(/\/$/, '') ||
+      'http://localhost:3000';
+    const apiUrl =
+      this.config.get<string>('PUBLIC_API_URL')?.replace(/\/$/, '') ||
+      `${apiBase}/v1`;
+    const wsUrl =
+      this.config.get<string>('PUBLIC_WS_URL')?.replace(/\/$/, '') || apiBase;
+
+    const { agentUrl, instantUrl } = this.buildLinkUrls(code);
+    const downloadUrl = `${apiUrl}/agent/download?code=${encodeURIComponent(code)}`;
+    const deepLink =
+      `remoteagent://enroll?code=${encodeURIComponent(code)}` +
+      `&api=${encodeURIComponent(apiUrl)}`;
+
+    return {
+      valid: true as const,
+      code: link.code,
+      kind: link.kind,
+      expiresAt: link.expiresAt,
+      apiUrl,
+      wsUrl,
+      agentUrl,
+      instantUrl,
+      downloadUrl,
+      deepLink,
+    };
+  }
+
+  async validateAgentCode(code: string) {
+    const link = await this.prisma.enrollmentLink.findUnique({
+      where: { code },
+    });
+    if (!link) return { valid: false as const, reason: 'not_found' };
+    if (link.expiresAt && link.expiresAt < new Date()) {
+      return {
+        valid: false as const,
+        reason: 'expired',
+        expiresAt: link.expiresAt,
+      };
+    }
+    if (link.kind === EnrollmentLinkKind.INSTANT) {
+      const { instantUrl } = this.buildLinkUrls(code);
+      return {
+        valid: false as const,
+        reason: 'instant_only',
+        kind: link.kind,
+        instantUrl,
+      };
+    }
+
+    return this.getAgentBootstrap(code, link);
   }
 
   async validateConnectCode(code: string) {
