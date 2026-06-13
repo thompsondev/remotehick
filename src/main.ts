@@ -61,6 +61,13 @@ async function bootstrap() {
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
   app.use(cookieParser());
 
+  const {
+    options: corsOptions,
+    allowedOrigins,
+    subdomainRoots,
+  } = buildCorsOptions(configService);
+  app.enableCors(corsOptions);
+
   const expressApp = app.getHttpAdapter().getInstance() as express.Application;
   expressApp.use(express.static('public'));
 
@@ -82,12 +89,9 @@ async function bootstrap() {
     rateLimit({
       windowMs: 15 * 60 * 1000,
       max: 5000,
+      skip: (req) => req.method === 'OPTIONS',
     }),
   );
-
-  const { options: corsOptions, allowedOrigins } =
-    buildCorsOptions(configService);
-  app.enableCors(corsOptions);
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -154,8 +158,11 @@ async function bootstrap() {
     console.log(`Unlimited prompts: ${unlimitedPrompts}`);
     console.log(`Copyright: ${authorName ? 'enabled' : 'disabled'}`);
     console.log(
-      `CORS origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : '(localhost only)'}`,
+      `CORS origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : '(none — localhost + subdomain rules)'}`,
     );
+    if (subdomainRoots.length) {
+      console.log(`CORS subdomain roots: ${subdomainRoots.join(', ')}`);
+    }
   } catch (err) {
     console.error('Error starting server', err);
   }
