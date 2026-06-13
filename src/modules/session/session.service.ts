@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { SessionStatus } from '../../../generated/prisma/client';
@@ -11,6 +12,8 @@ import { CreateSessionDto } from './dto/session.dto';
 
 @Injectable()
 export class SessionService {
+  private readonly logger = new Logger(SessionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly deviceService: DeviceService,
