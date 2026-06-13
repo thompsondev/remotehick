@@ -74,7 +74,19 @@ async function main() {
     );
   }
 
-  const { deviceId, deviceToken } = enroll.body;
+  const deviceId = enroll.body?.deviceId;
+  const deviceToken = enroll.body?.deviceToken;
+  if (typeof deviceId !== 'string' || !deviceId.trim()) {
+    throw new Error(
+      `enroll-browser missing deviceId: ${JSON.stringify(enroll.body)}`,
+    );
+  }
+  if (typeof deviceToken !== 'string' || !deviceToken.trim()) {
+    throw new Error(
+      `enroll-browser missing deviceToken: ${JSON.stringify(enroll.body)}`,
+    );
+  }
+
   console.log(`Enrolled device ${deviceId}`);
 
   const heartbeat = await fetch(`${API}/devices/${deviceId}/heartbeat`, {
