@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 import { ConfigService } from '@nestjs/config';
+import { RedisIoAdapter } from './lib/redis/redis-io.adapter';
 import * as moment from 'moment-timezone';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -95,6 +96,10 @@ async function bootstrap() {
       whitelist: false,
     }),
   );
+
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   expressApp.get('/agent/download', (_req, res) => {
     res.redirect(302, '/v1/agent/download');

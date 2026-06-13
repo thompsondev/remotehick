@@ -28,6 +28,17 @@ export class SessionService {
       throw new BadRequestException('Device is offline');
     }
 
+    if (!this.signaling.isDeviceSignalingConnected(device.id)) {
+      this.logger.warn(
+        `Create session blocked — device ${device.id} online via heartbeat but signaling socket missing`,
+      );
+      throw new BadRequestException(
+        device.deviceType === 'BROWSER'
+          ? 'Device is online but not ready — ask the user to keep the connect browser tab open and sharing their screen.'
+          : 'Device is online but not ready for remote control. Ask the user to keep Remote Agent running in the system tray, then reopen the enrollment link if needed.',
+      );
+    }
+
     const session = await this.prisma.remoteSession.create({
       data: {
         deviceId: device.id,
@@ -43,11 +54,16 @@ export class SessionService {
     );
 
     if (!accepted) {
+      this.logger.warn(
+        `Create session failed — device ${device.id} did not emit session_accept in time`,
+      );
       await this.prisma.remoteSession.update({
         where: { id: session.id },
         data: { status: SessionStatus.ENDED, endedAt: new Date() },
       });
-      throw new BadRequestException('Device did not accept session');
+      throw new BadRequestException(
+        'Device did not accept session. Ensure the agent is running and try again in a few seconds.',
+      );
     }
 
     const updated = await this.prisma.remoteSession.update({

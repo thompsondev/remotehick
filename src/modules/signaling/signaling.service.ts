@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../../lib/redis/redis.service';
 
 export interface SignalingMessage {
@@ -9,8 +9,12 @@ export interface SignalingMessage {
   payload?: unknown;
 }
 
+const DEVICE_WS_TTL = 120;
+const SESSION_ACCEPT_TIMEOUT_MS = 30_000;
+
 @Injectable()
 export class SignalingService {
+  private readonly logger = new Logger(SignalingService.name);
   private readonly adminSockets = new Map<string, string>();
   private readonly deviceSockets = new Map<string, string>();
   private readonly sessionWaiters = new Map<
@@ -34,7 +38,15 @@ export class SignalingService {
 
   registerDeviceSocket(deviceId: string, socketId: string) {
     this.deviceSockets.set(deviceId, socketId);
-    void this.redis.set(`device:ws:${deviceId}`, socketId, 120);
+    void this.redis.set(`device:ws:${deviceId}`, socketId, DEVICE_WS_TTL);
+  }
+
+  touchDeviceSocket(deviceId: string, socketId: string) {
+    if (this.deviceSockets.get(deviceId) !== socketId) {
+      this.registerDeviceSocket(deviceId, socketId);
+      return;
+    }
+    void this.redis.set(`device:ws:${deviceId}`, socketId, DEVICE_WS_TTL);
   }
 
   unregisterSocket(socketId: string, role: 'admin' | 'device', id: string) {
@@ -50,6 +62,10 @@ export class SignalingService {
     }
   }
 
+  isDeviceSignalingConnected(deviceId: string): boolean {
+    return this.deviceSockets.has(deviceId);
+  }
+
   getAdminSocket(adminId: string) {
     return this.adminSockets.get(adminId);
   }
@@ -59,10 +75,13 @@ export class SignalingService {
   }
 
   relayToDevice(deviceId: string, event: string, data: unknown) {
+    if (!this.gateway) return;
+
     const socketId = this.deviceSockets.get(deviceId);
-    if (socketId && this.gateway) {
+    if (socketId) {
       this.gateway.emitToSocket(socketId, event, data);
     }
+    this.gateway.emitToRoom(`device:${deviceId}`, event, data);
   }
 
   notifyViewerReady(deviceId: string, sessionId: string) {
@@ -87,14 +106,27 @@ export class SignalingService {
     sessionId: string,
     adminId: string,
   ): Promise<boolean> {
+    if (!this.isDeviceSignalingConnected(deviceId)) {
+      this.logger.warn(
+        `session_request skipped — device ${deviceId} has no active signaling socket`,
+      );
+      return Promise.resolve(false);
+    }
+
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.sessionWaiters.delete(sessionId);
+        this.logger.warn(
+          `session ${sessionId} timed out waiting for accept from device ${deviceId}`,
+        );
         resolve(false);
-      }, 15000);
+      }, SESSION_ACCEPT_TIMEOUT_MS);
 
       this.sessionWaiters.set(sessionId, { resolve, timer });
 
+      this.logger.log(
+        `session_request → device ${deviceId} (session ${sessionId})`,
+      );
       this.relayToDevice(deviceId, 'session_request', {
         sessionId,
         adminId,
@@ -108,6 +140,7 @@ export class SignalingService {
       clearTimeout(waiter.timer);
       waiter.resolve(true);
       this.sessionWaiters.delete(sessionId);
+      this.logger.log(`session ${sessionId} accepted by device`);
     }
   }
 

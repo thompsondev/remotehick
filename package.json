@@ -44,6 +44,7 @@
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
     "@scalar/nestjs-api-reference": "^1.0.24",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@valyu/ai-sdk": "^1.1.0",
     "ai": "^6.0.90",
     "axios": "^1.13.5",

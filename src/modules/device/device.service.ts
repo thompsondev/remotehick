@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -22,6 +24,7 @@ import {
   EnrollDeviceDto,
   HeartbeatDto,
 } from './dto/device.dto';
+import { SignalingService } from '../signaling/signaling.service';
 
 /** Must exceed 2× browser heartbeat interval (15s) for reliable presence. */
 const ONLINE_TTL = 90;
@@ -54,6 +57,8 @@ export class DeviceService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly notifications: NotificationService,
+    @Inject(forwardRef(() => SignalingService))
+    private readonly signaling: SignalingService,
   ) {}
 
   private isLinkExpired(expiresAt: Date | null): boolean {
@@ -195,6 +200,7 @@ export class DeviceService {
       devices.map(async (device) => ({
         ...device,
         isOnline: await this.isDeviceOnline(device.id),
+        signalingReady: this.signaling.isDeviceSignalingConnected(device.id),
       })),
     );
   }
@@ -211,6 +217,7 @@ export class DeviceService {
     return {
       ...device,
       isOnline: await this.isDeviceOnline(device.id),
+      signalingReady: this.signaling.isDeviceSignalingConnected(device.id),
     };
   }
 

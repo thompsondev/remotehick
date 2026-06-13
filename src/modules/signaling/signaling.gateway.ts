@@ -59,6 +59,7 @@ export class SignalingGateway
         client.data.role = 'admin';
         client.data.adminId = payload.sub;
         this.signaling.registerAdminSocket(payload.sub, client.id);
+        this.logger.log(`Admin signaling connected: ${payload.sub}`);
         return;
       }
 
@@ -70,15 +71,26 @@ export class SignalingGateway
             revokedAt: null,
           },
         });
-        if (!device) throw new UnauthorizedException();
+        if (!device) {
+          this.logger.warn(
+            `Device signaling auth rejected for ${auth.deviceId} (invalid token or revoked)`,
+          );
+          throw new UnauthorizedException();
+        }
         client.data.role = 'device';
         client.data.deviceId = device.id;
         this.signaling.registerDeviceSocket(device.id, client.id);
         await client.join(`device:${device.id}`);
         await this.deviceService.markOnline(device.id);
+        this.logger.log(
+          `Device signaling connected: ${device.id} (${device.name})`,
+        );
         return;
       }
 
+      this.logger.warn(
+        `Signaling connection rejected — missing or invalid auth (role=${auth?.role ?? 'none'})`,
+      );
       client.disconnect();
     } catch (err) {
       this.logger.warn(`WS auth failed: ${err}`);
@@ -141,6 +153,13 @@ export class SignalingGateway
           this.signaling.notifyViewerReady(session.deviceId, data.sessionId);
         }
       });
+  }
+
+  @SubscribeMessage('device_ping')
+  handleDevicePing(@ConnectedSocket() client: Socket) {
+    if (client.data.role !== 'device' || !client.data.deviceId) return;
+    this.signaling.touchDeviceSocket(client.data.deviceId as string, client.id);
+    return { ok: true };
   }
 
   @SubscribeMessage('session_accept')
