@@ -66,6 +66,14 @@ export class SignalingService {
     return this.deviceSockets.has(deviceId);
   }
 
+  getSignalingStats() {
+    return {
+      connectedDevices: this.deviceSockets.size,
+      connectedAdmins: this.adminSockets.size,
+      deviceIds: [...this.deviceSockets.keys()],
+    };
+  }
+
   getAdminSocket(adminId: string) {
     return this.adminSockets.get(adminId);
   }
