@@ -70,7 +70,6 @@ export class SignalingService {
     return {
       connectedDevices: this.deviceSockets.size,
       connectedAdmins: this.adminSockets.size,
-      deviceIds: [...this.deviceSockets.keys()],
     };
   }
 
