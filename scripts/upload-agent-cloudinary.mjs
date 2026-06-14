@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { v2 as cloudinary } from 'cloudinary';
 import {
@@ -170,7 +171,10 @@ export async function uploadAgentToCloudinary(options = {}) {
   return { variant, partUrls };
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
   uploadAgentToCloudinary().catch((error) => {
     console.error(error.message || error);
     process.exit(1);
