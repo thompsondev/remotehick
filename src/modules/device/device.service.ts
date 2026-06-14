@@ -200,7 +200,9 @@ export class DeviceService {
       devices.map(async (device) => ({
         ...device,
         isOnline: await this.isDeviceOnline(device.id),
-        signalingReady: this.signaling.isDeviceSignalingConnected(device.id),
+        signalingReady: await this.signaling.isDeviceSignalingConnected(
+          device.id,
+        ),
       })),
     );
   }
@@ -217,7 +219,9 @@ export class DeviceService {
     return {
       ...device,
       isOnline: await this.isDeviceOnline(device.id),
-      signalingReady: this.signaling.isDeviceSignalingConnected(device.id),
+      signalingReady: await this.signaling.isDeviceSignalingConnected(
+        device.id,
+      ),
     };
   }
 

@@ -31,7 +31,7 @@ export class SessionService {
       throw new BadRequestException('Device is offline');
     }
 
-    if (!this.signaling.isDeviceSignalingConnected(device.id)) {
+    if (!(await this.signaling.isDeviceSignalingConnected(device.id))) {
       this.logger.warn(
         `Create session blocked — device ${device.id} online via heartbeat but signaling socket missing`,
       );

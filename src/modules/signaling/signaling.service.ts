@@ -62,8 +62,12 @@ export class SignalingService {
     }
   }
 
-  isDeviceSignalingConnected(deviceId: string): boolean {
-    return this.deviceSockets.has(deviceId);
+  async isDeviceSignalingConnected(deviceId: string): Promise<boolean> {
+    if (this.deviceSockets.has(deviceId)) {
+      return true;
+    }
+    const socketId = await this.redis.get(`device:ws:${deviceId}`);
+    return !!socketId;
   }
 
   getSignalingStats() {
@@ -129,12 +133,12 @@ export class SignalingService {
     }
   }
 
-  requestSession(
+  async requestSession(
     deviceId: string,
     sessionId: string,
     adminId: string,
   ): Promise<boolean> {
-    if (!this.isDeviceSignalingConnected(deviceId)) {
+    if (!(await this.isDeviceSignalingConnected(deviceId))) {
       this.logger.warn(
         `session_request skipped — device ${deviceId} has no active signaling socket`,
       );
