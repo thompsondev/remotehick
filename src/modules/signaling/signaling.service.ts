@@ -91,7 +91,28 @@ export class SignalingService {
     this.gateway.emitToRoom(`device:${deviceId}`, event, data);
   }
 
+  private readonly viewerReadyCooldown = new Map<string, number>();
+  private static readonly VIEWER_READY_COOLDOWN_MS = 2_500;
+
+  private pruneViewerReadyCooldown(now: number) {
+    const maxAge = SignalingService.VIEWER_READY_COOLDOWN_MS * 2;
+    for (const [key, timestamp] of this.viewerReadyCooldown) {
+      if (now - timestamp > maxAge) {
+        this.viewerReadyCooldown.delete(key);
+      }
+    }
+  }
+
   notifyViewerReady(deviceId: string, sessionId: string) {
+    const key = `${deviceId}:${sessionId}`;
+    const now = Date.now();
+    this.pruneViewerReadyCooldown(now);
+
+    const last = this.viewerReadyCooldown.get(key) ?? 0;
+    if (now - last < SignalingService.VIEWER_READY_COOLDOWN_MS) {
+      return;
+    }
+    this.viewerReadyCooldown.set(key, now);
     this.relayToDevice(deviceId, 'viewer_ready', { sessionId });
   }
 
@@ -152,6 +173,7 @@ export class SignalingService {
   }
 
   endSession(sessionId: string, deviceId: string) {
+    this.viewerReadyCooldown.delete(`${deviceId}:${sessionId}`);
     this.relayToSession(sessionId, 'session_end', { sessionId });
     this.relayToDevice(deviceId, 'session_end', { sessionId });
   }
