@@ -42,6 +42,30 @@ export class HeartbeatDto {
   @IsOptional()
   @IsString()
   ipAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  os?: string;
+
+  @IsOptional()
+  @IsString()
+  browser?: string;
+
+  @IsOptional()
+  @IsString()
+  userAgent?: string;
+
+  @IsOptional()
+  @IsString()
+  timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  screenResolution?: string;
 }
 
 export class EnrollBrowserDto {

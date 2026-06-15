@@ -66,9 +66,9 @@ export class DeviceController {
     @Req() req: Request & { device: DevicePayload },
   ) {
     if (req.device.deviceId !== id) {
-      return this.deviceService.heartbeat(req.device.deviceId, dto);
+      return this.deviceService.heartbeat(req.device.deviceId, dto, req);
     }
-    return this.deviceService.heartbeat(id, dto);
+    return this.deviceService.heartbeat(id, dto, req);
   }
 
   @AdminRoute()

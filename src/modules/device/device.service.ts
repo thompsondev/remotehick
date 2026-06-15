@@ -102,19 +102,43 @@ export class DeviceService {
     })}`;
   }
 
+  private isPrivateIp(ip: string): boolean {
+    if (ip === '::1') return true;
+
+    const normalized = ip.replace(/^::ffff:/i, '');
+    const parts = normalized.split('.');
+    if (parts.length !== 4) return false;
+
+    const octets = parts.map((part) => Number(part));
+    if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+      return false;
+    }
+
+    const [a, b] = octets;
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 127) return true;
+
+    return false;
+  }
+
+  private resolveDeviceIp(
+    dtoIp: string | undefined,
+    req?: Request,
+  ): string | undefined {
+    const trimmed = dtoIp?.trim();
+    const requestIp = req ? clientIpFromRequest(req) : undefined;
+
+    if (trimmed && !this.isPrivateIp(trimmed)) return trimmed;
+    if (requestIp && !this.isPrivateIp(requestIp)) return requestIp;
+    return requestIp || trimmed;
+  }
+
   private async resolveGeoFromIp(
     ip: string | undefined,
   ): Promise<{ country?: string; city?: string }> {
-    if (!ip) return {};
-    if (
-      ip === '127.0.0.1' ||
-      ip === '::1' ||
-      ip.startsWith('10.') ||
-      ip.startsWith('192.168.') ||
-      ip.startsWith('172.')
-    ) {
-      return {};
-    }
+    if (!ip || this.isPrivateIp(ip)) return {};
 
     try {
       const controller = new AbortController();
@@ -153,10 +177,7 @@ export class DeviceService {
     req?: Request,
     defaults?: { name: string; hostname: string; os: string; browser: string },
   ) {
-    const ip =
-      dto.ipAddress?.trim() ||
-      (req ? clientIpFromRequest(req) : undefined) ||
-      undefined;
+    const ip = this.resolveDeviceIp(dto.ipAddress, req);
     const browser = dto.browser?.trim() || defaults?.browser || 'Web Browser';
     const geo = await this.resolveGeoFromIp(ip);
     const enrolledAt = new Date();
@@ -234,26 +255,16 @@ export class DeviceService {
 
     const deviceToken = generateDeviceToken();
     const deviceTokenHash = hashToken(deviceToken);
-    const geo = await this.resolveGeoFromIp(
-      dto.ipAddress?.trim() || (req ? clientIpFromRequest(req) : undefined),
-    );
+    const meta = await this.buildDeviceMetadata(dto, req, {
+      name: dto.name,
+      hostname: dto.hostname,
+      os: dto.os,
+      browser: 'Remote Agent',
+    });
 
     const device = await this.prisma.device.create({
       data: {
-        name: dto.name,
-        os: dto.os,
-        hostname: dto.hostname,
-        ipAddress:
-          dto.ipAddress?.trim() ||
-          (req ? clientIpFromRequest(req) : undefined) ||
-          null,
-        browser: dto.browser?.trim() || null,
-        userAgent: dto.userAgent?.trim() || req?.headers['user-agent'] || null,
-        timezone: dto.timezone?.trim() || null,
-        language: dto.language?.trim() || null,
-        screenResolution: dto.screenResolution?.trim() || null,
-        country: geo.country || null,
-        city: geo.city || null,
+        ...meta,
         deviceType: DeviceType.NATIVE,
         deviceTokenHash,
         status: DeviceStatus.ONLINE,
@@ -335,14 +346,60 @@ export class DeviceService {
     };
   }
 
-  async heartbeat(deviceId: string, dto: HeartbeatDto) {
+  private backfillField<T extends string>(
+    current: T | null | undefined,
+    incoming: T | undefined,
+  ): T | undefined {
+    if (current?.trim()) return undefined;
+    const value = incoming?.trim();
+    return value || undefined;
+  }
+
+  async heartbeat(deviceId: string, dto: HeartbeatDto, req?: Request) {
     const wasOnline = await this.isDeviceOnline(deviceId);
+    const existing = await this.prisma.device.findUnique({
+      where: { id: deviceId },
+      select: {
+        country: true,
+        city: true,
+        os: true,
+        browser: true,
+        userAgent: true,
+        timezone: true,
+        language: true,
+        screenResolution: true,
+      },
+    });
+
+    const publicIp = this.resolveDeviceIp(dto.ipAddress, req);
+    const geo =
+      publicIp && existing && (!existing.country || !existing.city)
+        ? await this.resolveGeoFromIp(publicIp)
+        : {};
+
+    const metadataPatch = {
+      os: this.backfillField(existing?.os, dto.os),
+      browser: this.backfillField(existing?.browser, dto.browser),
+      userAgent: this.backfillField(existing?.userAgent, dto.userAgent),
+      timezone: this.backfillField(existing?.timezone, dto.timezone),
+      language: this.backfillField(existing?.language, dto.language),
+      screenResolution: this.backfillField(
+        existing?.screenResolution,
+        dto.screenResolution,
+      ),
+    };
+
     const device = await this.prisma.device.update({
       where: { id: deviceId },
       data: {
         status: DeviceStatus.ONLINE,
         lastSeenAt: new Date(),
-        ...(dto.ipAddress ? { ipAddress: dto.ipAddress } : {}),
+        ...(publicIp ? { ipAddress: publicIp } : {}),
+        ...(geo.country ? { country: geo.country } : {}),
+        ...(geo.city ? { city: geo.city } : {}),
+        ...Object.fromEntries(
+          Object.entries(metadataPatch).filter(([, value]) => !!value),
+        ),
       },
       include: {
         enrollmentLink: { select: { createdByAdminId: true } },
