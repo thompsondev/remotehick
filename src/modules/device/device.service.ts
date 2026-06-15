@@ -346,10 +346,10 @@ export class DeviceService {
     };
   }
 
-  private backfillField<T extends string>(
-    current: T | null | undefined,
-    incoming: T | undefined,
-  ): T | undefined {
+  private backfillField(
+    current: string | null | undefined,
+    incoming: string | undefined,
+  ): string | undefined {
     if (current?.trim()) return undefined;
     const value = incoming?.trim();
     return value || undefined;
