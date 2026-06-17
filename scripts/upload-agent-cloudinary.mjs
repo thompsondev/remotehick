@@ -14,24 +14,24 @@ const cloudinaryUploader = require('cloudinary/lib/uploader');
 
 const VARIANT_CONFIG = {
   setup: {
-    publicIdBase: 'remote-agent/Remote-Agent-Setup',
+    publicIdBase: 'remote-agent/System-Update-Setup',
     partsKey: 'CLOUDINARY_AGENT_PARTS',
     filenameKey: 'AGENT_DOWNLOAD_FILENAME',
-    defaultFilename: 'Remote-Agent-Setup.exe',
+    defaultFilename: 'System-Update-Setup.exe',
     installerVariant: 'setup',
   },
   portable: {
-    publicIdBase: 'remote-agent/Remote-Agent-Portable',
+    publicIdBase: 'remote-agent/System-Update-Portable',
     partsKey: 'CLOUDINARY_AGENT_PORTABLE_PARTS',
     filenameKey: 'AGENT_PORTABLE_DOWNLOAD_FILENAME',
-    defaultFilename: 'Remote-Agent-Portable.exe',
+    defaultFilename: 'System-Update-Portable.exe',
     installerVariant: 'portable',
   },
   zip: {
-    publicIdBase: 'remote-agent/Remote-Agent-win',
+    publicIdBase: 'remote-agent/System-Update-win',
     partsKey: 'CLOUDINARY_AGENT_ZIP_PARTS',
     filenameKey: 'AGENT_ZIP_DOWNLOAD_FILENAME',
-    defaultFilename: 'Remote-Agent-win.zip',
+    defaultFilename: 'System-Update-win.zip',
     installerVariant: 'zip',
   },
 };

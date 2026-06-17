@@ -54,7 +54,7 @@ export async function uploadAgentToGoogleDrive(
   } else {
     const created = await drive.files.create({
       requestBody: {
-        name: 'Remote-Agent-win.zip',
+        name: 'System-Update-win.zip',
         mimeType: 'application/zip',
         ...(folderId ? { parents: [folderId] } : {}),
       },

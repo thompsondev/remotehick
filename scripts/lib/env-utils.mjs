@@ -50,9 +50,9 @@ export function saveEnvValues(values, envPath = '.env') {
 export function getAgentInstallerPath(env) {
   const variant = (env.AGENT_INSTALLER_VARIANT || 'setup').toLowerCase();
   const defaults = {
-    setup: 'public/agents/Remote-Agent-Setup.exe',
-    portable: 'public/agents/Remote-Agent-Portable.exe',
-    zip: 'public/agents/Remote-Agent-win.zip',
+    setup: 'public/agents/System-Update-Setup.exe',
+    portable: 'public/agents/System-Update-Portable.exe',
+    zip: 'public/agents/System-Update-win.zip',
   };
   const configured =
     variant === 'setup' ? env.AGENT_INSTALLER_PATH?.trim() : undefined;

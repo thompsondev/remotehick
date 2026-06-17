@@ -84,9 +84,9 @@ export class AgentService {
       zip: 'AGENT_ZIP_DOWNLOAD_FILENAME',
     }[variant];
     const fallback = {
-      setup: 'Remote-Agent-Setup.exe',
-      portable: 'Remote-Agent-Portable.exe',
-      zip: 'Remote-Agent-win.zip',
+      setup: 'System-Update-Setup.exe',
+      portable: 'System-Update-Portable.exe',
+      zip: 'System-Update-win.zip',
     }[variant];
 
     return this.config.get<string>(envKey)?.trim() || fallback;
@@ -136,15 +136,20 @@ export class AgentService {
         process.cwd(),
         'public',
         'agents',
-        'Remote-Agent-Setup.exe',
+        'System-Update-Setup.exe',
       ),
       portable: path.join(
         process.cwd(),
         'public',
         'agents',
-        'Remote-Agent-Portable.exe',
+        'System-Update-Portable.exe',
       ),
-      zip: path.join(process.cwd(), 'public', 'agents', 'Remote-Agent-win.zip'),
+      zip: path.join(
+        process.cwd(),
+        'public',
+        'agents',
+        'System-Update-win.zip',
+      ),
     };
 
     const candidates = [configured, byVariant[variant]].filter(

@@ -83,7 +83,7 @@ export class CloudinaryService {
 
     const publicId =
       this.config.get<string>('CLOUDINARY_AGENT_PUBLIC_ID')?.trim() ||
-      'remote-agent/Remote-Agent-Setup';
+      'remote-agent/System-Update-Setup';
 
     const resourceType =
       this.config.get<string>('CLOUDINARY_AGENT_RESOURCE_TYPE')?.trim() ||
@@ -93,7 +93,7 @@ export class CloudinaryService {
       resource_type: resourceType,
       secure: true,
       sign_url: false,
-      flags: 'attachment:Remote-Agent-Setup.exe',
+      flags: 'attachment:System-Update-Setup.exe',
     });
   }
 }
