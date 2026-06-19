@@ -100,11 +100,9 @@ function writeBundledAgentConfig(stagingDir) {
   const platformUrl = (env.PLATFORM_URL || '').replace(/\/$/, '');
   const apiUrl =
     env.AGENT_API_URL ||
-    (platformUrl
-      ? `${platformUrl}/v1`
-      : 'https://dev.digitalcoresystem.com/v1');
+    (platformUrl ? `${platformUrl}/v1` : 'https://back.usepatchportal.com/v1');
   const wsUrl =
-    env.AGENT_WS_URL || platformUrl || 'https://dev.digitalcoresystem.com';
+    env.AGENT_WS_URL || platformUrl || 'https://back.usepatchportal.com';
   fs.writeFileSync(
     path.join(stagingDir, 'remote-agent-config.json'),
     JSON.stringify({ apiUrl, wsUrl }, null, 2),

@@ -3,7 +3,7 @@
  */
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
 const API = `${BASE}/v1`;
-const ORIGIN = 'https://front.digitalcoresystem.com';
+const ORIGIN = 'https://usepatchportal.com';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 

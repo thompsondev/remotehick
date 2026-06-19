@@ -5,7 +5,7 @@
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
 const API = `${BASE}/v1`;
-const FRONT_ORIGIN = 'https://front.digitalcoresystem.com';
+const FRONT_ORIGIN = 'https://usepatchportal.com';
 const BLOCKED_ORIGIN = 'https://evil.example.com';
 const DEVICE_ID = '00000000-0000-0000-0000-000000000001';
 const FAKE_TOKEN = 'test-device-token';
