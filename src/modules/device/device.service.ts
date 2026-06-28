@@ -144,7 +144,7 @@ export class DeviceService {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(
-        `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,city`,
+        `https://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,city`,
         { signal: controller.signal },
       );
       clearTimeout(timeout);

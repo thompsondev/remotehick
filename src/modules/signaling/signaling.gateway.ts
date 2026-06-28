@@ -9,11 +9,13 @@ import {
 } from '@nestjs/websockets';
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { SignalingService } from './signaling.service';
 import { DeviceService } from '../device/device.service';
 import { PrismaService } from '../../lib/prisma/prisma.service';
 import { hashToken } from '../../middleware/helpers/tokens';
+import { buildCorsOptions } from '../../middleware/helpers/cors';
 import type { AdminPayload } from '../../middleware/decorators/remote.decorator';
 
 interface AuthPayload {
@@ -23,9 +25,13 @@ interface AuthPayload {
   token?: string;
 }
 
+// CORS is enforced manually in handleConnection via origin validation against
+// the same allowlist used by the HTTP server (see buildCorsOptions). Setting
+// cors: false on the decorator prevents Socket.IO from applying its own
+// permissive wildcard policy.
 @WebSocketGateway({
   namespace: '/signaling',
-  cors: { origin: true, credentials: true },
+  cors: false,
 })
 export class SignalingGateway
   implements OnGatewayConnection, OnGatewayDisconnect
@@ -34,13 +40,21 @@ export class SignalingGateway
   server: Server;
 
   private readonly logger = new Logger(SignalingGateway.name);
+  private readonly corsOriginFn: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => void;
 
   constructor(
     private readonly signaling: SignalingService,
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly deviceService: DeviceService,
+    private readonly configService: ConfigService,
   ) {
+    const { options } = buildCorsOptions(configService);
+    // Capture the origin function so we can call it in handleConnection.
+    this.corsOriginFn = options.origin as typeof this.corsOriginFn;
     this.signaling.setGateway({
       emitToSocket: (socketId, event, data) => {
         this.server.to(socketId).emit(event, data);
@@ -53,6 +67,19 @@ export class SignalingGateway
 
   async handleConnection(client: Socket) {
     try {
+      // Validate the WebSocket origin against the same CORS allowlist used by
+      // the HTTP server to prevent cross-site WebSocket hijacking.
+      const origin = client.handshake.headers.origin;
+      await new Promise<void>((resolve, reject) => {
+        this.corsOriginFn(origin, (err, allow) => {
+          if (err || !allow) {
+            reject(new UnauthorizedException(`Origin not allowed: ${origin ?? '(none)'}`));
+          } else {
+            resolve();
+          }
+        });
+      });
+
       const auth = client.handshake.auth as AuthPayload;
       if (auth?.role === 'admin' && auth.token) {
         const payload = this.jwtService.verify<AdminPayload>(auth.token);
@@ -116,19 +143,33 @@ export class SignalingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { sessionId: string },
   ) {
-    await client.join(`session:${data.sessionId}`);
-
     if (client.data.role === 'admin') {
       const session = await this.prisma.remoteSession.findUnique({
         where: { id: data.sessionId },
-        select: { deviceId: true, status: true },
+        select: { deviceId: true, status: true, adminId: true },
       });
-      if (
-        session &&
-        (session.status === 'ACTIVE' || session.status === 'PENDING')
-      ) {
+
+      // Verify the requesting admin owns this session to prevent one admin
+      // from intercepting another admin's remote sessions.
+      if (!session) {
+        client.emit('error', { message: 'Session not found' });
+        return;
+      }
+      if (session.adminId !== client.data.adminId) {
+        this.logger.warn(
+          `Admin ${client.data.adminId as string} attempted to join session ${data.sessionId} owned by ${session.adminId}`,
+        );
+        client.emit('error', { message: 'Access denied to this session' });
+        return;
+      }
+
+      await client.join(`session:${data.sessionId}`);
+
+      if (session.status === 'ACTIVE' || session.status === 'PENDING') {
         this.signaling.notifyViewerReady(session.deviceId, data.sessionId);
       }
+    } else {
+      await client.join(`session:${data.sessionId}`);
     }
 
     return { joined: data.sessionId };
@@ -179,6 +220,10 @@ export class SignalingGateway
     @MessageBody()
     data: { sessionId: string; offer: unknown },
   ) {
+    if (!client.rooms.has(`session:${data.sessionId}`)) {
+      client.emit('error', { message: 'Not a member of this session' });
+      return;
+    }
     this.signaling.relayToSession(data.sessionId, 'webrtc_offer', {
       sessionId: data.sessionId,
       from: client.data.role,
@@ -192,6 +237,10 @@ export class SignalingGateway
     @MessageBody()
     data: { sessionId: string; answer: unknown },
   ) {
+    if (!client.rooms.has(`session:${data.sessionId}`)) {
+      client.emit('error', { message: 'Not a member of this session' });
+      return;
+    }
     this.signaling.relayToSession(data.sessionId, 'webrtc_answer', {
       sessionId: data.sessionId,
       from: client.data.role,
@@ -205,6 +254,10 @@ export class SignalingGateway
     @MessageBody()
     data: { sessionId: string; candidate: unknown },
   ) {
+    if (!client.rooms.has(`session:${data.sessionId}`)) {
+      client.emit('error', { message: 'Not a member of this session' });
+      return;
+    }
     this.signaling.relayToSession(data.sessionId, 'webrtc_ice', {
       sessionId: data.sessionId,
       from: client.data.role,
@@ -217,6 +270,10 @@ export class SignalingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { sessionId: string; message: unknown },
   ) {
+    if (!client.rooms.has(`session:${data.sessionId}`)) {
+      client.emit('error', { message: 'Not a member of this session' });
+      return;
+    }
     this.signaling.relayToSession(data.sessionId, 'data_channel_message', {
       from: client.data.role,
       message: data.message,

@@ -57,8 +57,8 @@ async function bootstrap() {
     },
   );
 
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
   app.use(cookieParser());
 
   const {
@@ -73,11 +73,15 @@ async function bootstrap() {
 
   app.setGlobalPrefix('v1');
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: false, // Scalar API docs require inline scripts
-    }),
-  );
+  // Apply full helmet (with CSP) to all routes except the API docs paths,
+  // which require inline scripts and cannot function under a strict CSP.
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.path.startsWith('/v1/docs') || req.path.startsWith('/v1/swagger')) {
+      helmet({ contentSecurityPolicy: false })(req, res, next);
+    } else {
+      helmet()(req, res, next);
+    }
+  });
 
   moment.tz.setDefault('Africa/Lagos');
 
@@ -85,19 +89,31 @@ async function bootstrap() {
 
   app.useGlobalFilters(new AllExceptionsFilter(logger));
 
+  // Global rate limit: 500 requests per 15 minutes per IP.
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
-      max: 5000,
+      max: 500,
       skip: (req) => req.method === 'OPTIONS',
     }),
   );
+
+  // Strict rate limit for authentication and device enrollment endpoints:
+  // 20 requests per 15 minutes to slow brute-force and enumeration attacks.
+  const strictLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    skip: (req) => req.method === 'OPTIONS',
+  });
+  app.use('/v1/auth/', strictLimiter);
+  app.use('/v1/devices/enroll', strictLimiter);
 
   app.useGlobalPipes(
     new ValidationPipe({
       stopAtFirstError: true,
       transform: true,
-      whitelist: false,
+      whitelist: true,
+      forbidNonWhitelisted: true,
     }),
   );
 
@@ -109,37 +125,41 @@ async function bootstrap() {
     res.redirect(302, '/v1/agent/download');
   });
 
-  const swaggerOptions = new DocumentBuilder()
-    .setTitle(`${platform} API`)
-    .setDescription(`API Documentation for ${platform} API`)
-    .setVersion('1.0.0')
-    .addServer(`http://localhost:${port}`, 'Local environment')
-    .addServer(`https://${developmentUrl}`, 'Development environment')
-    .addServer(`https://${productionUrl}`, 'Production environment')
-    .addBearerAuth(
-      { type: 'http', scheme: 'Bearer', bearerFormat: 'JWT' },
-      'Authorization',
-    )
-    .addTag('Server', 'Endpoint for Server functions')
-    .addTag('Chat', 'Endpoint for Chat functions')
-    .addTag('Auth', 'Admin authentication')
-    .addTag('Devices', 'Device registry and enrollment')
-    .addTag('Enrollment', 'Enrollment link management')
-    .addTag('Sessions', 'Remote session management')
-    .addTag('Agent', 'Windows agent installer download')
-    .build();
+  // Only expose API documentation in non-production environments.
+  // Swagger/Scalar enumerate all endpoints and should never be public in prod.
+  if (configService.get<string>('NODE_ENV') !== 'production') {
+    const swaggerOptions = new DocumentBuilder()
+      .setTitle(`${platform} API`)
+      .setDescription(`API Documentation for ${platform} API`)
+      .setVersion('1.0.0')
+      .addServer(`http://localhost:${port}`, 'Local environment')
+      .addServer(`https://${developmentUrl}`, 'Development environment')
+      .addServer(`https://${productionUrl}`, 'Production environment')
+      .addBearerAuth(
+        { type: 'http', scheme: 'Bearer', bearerFormat: 'JWT' },
+        'Authorization',
+      )
+      .addTag('Server', 'Endpoint for Server functions')
+      .addTag('Chat', 'Endpoint for Chat functions')
+      .addTag('Auth', 'Admin authentication')
+      .addTag('Devices', 'Device registry and enrollment')
+      .addTag('Enrollment', 'Enrollment link management')
+      .addTag('Sessions', 'Remote session management')
+      .addTag('Agent', 'Windows agent installer download')
+      .build();
 
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerOptions);
-  expressApp.get('/v1/docs-json', (_req, res) => res.json(swaggerDocument));
-  SwaggerModule.setup('v1/swagger', app, swaggerDocument);
-  expressApp.use(
-    '/v1/docs',
-    apiReference({
-      spec: { url: '/v1/docs-json' },
-      theme: 'default',
-      pageTitle: `${platform} API`,
-    }),
-  );
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerOptions);
+    expressApp.get('/v1/docs-json', (_req, res) => res.json(swaggerDocument));
+    SwaggerModule.setup('v1/swagger', app, swaggerDocument);
+    expressApp.use(
+      '/v1/docs',
+      apiReference({
+        spec: { url: '/v1/docs-json' },
+        theme: 'default',
+        pageTitle: `${platform} API`,
+      }),
+    );
+  }
 
   const aiModelRaw = configService.get<string>('AI_MODEL')?.trim();
   const aiModel =

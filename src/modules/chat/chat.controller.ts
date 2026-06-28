@@ -16,6 +16,7 @@ import { Request, Response } from 'express';
 import { ChatService } from './chat.service';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OpenAccessPromptLimitGuard } from '../../middleware/guards/open-access-prompt-limit.guard';
+import { AdminJwtGuard } from '../../middleware/guards/admin-jwt.guard';
 import { SlackService } from 'src/lib/slack/slack.service';
 import { Public } from 'src/middleware/decorators/public.decorator';
 
@@ -30,7 +31,7 @@ export class ChatController {
   ) {}
 
   @Post('prompt')
-  @UseGuards(OpenAccessPromptLimitGuard)
+  @UseGuards(AdminJwtGuard, OpenAccessPromptLimitGuard)
   @ApiOperation({ summary: 'Generate a response from the AI' })
   @ApiBody({
     schema: {
@@ -43,7 +44,7 @@ export class ChatController {
   }
 
   @Post('prompt/stream')
-  @UseGuards(OpenAccessPromptLimitGuard)
+  @UseGuards(AdminJwtGuard, OpenAccessPromptLimitGuard)
   @ApiOperation({ summary: 'Stream a response from the AI (SSE)' })
   @ApiBody({
     schema: {
@@ -108,6 +109,10 @@ export class ChatController {
     res.end();
   }
 
+  // WhatsApp webhook endpoints are intentionally public. Meta's platform
+  // verifies authenticity via the hub.verify_token challenge (GET) and by
+  // signing payloads with the app secret (POST). They cannot carry JWT auth
+  // because the caller is Meta's infrastructure, not an authenticated admin.
   @Get('webhook')
   @ApiOperation({ summary: 'WhatsApp webhook verification challenge' })
   verifyWebhook(
@@ -160,6 +165,9 @@ export class ChatController {
       );
   }
 
+  // Slack Event API webhook is intentionally public. Slack cannot send a JWT
+  // bearer token; instead, each request is authenticated via HMAC-SHA256
+  // request-signature verification (see verifyRequest call below).
   @Post('slack/events')
   @HttpCode(200)
   @Public()
@@ -172,16 +180,23 @@ export class ChatController {
   ) {
     const rawBody: string | undefined = (req as any).rawBody;
 
-    if (rawBody !== undefined) {
-      const isValid = this.slackService.verifyRequest(
-        signature,
-        timestamp,
-        rawBody,
-      );
-      if (!isValid) {
-        this.logger.warn('Rejected Slack request — invalid signature');
-        throw new UnauthorizedException('Invalid Slack signature');
-      }
+    // rawBody must always be present for Slack events (populated by the
+    // raw-body middleware in main.ts). If it is missing the request did not
+    // go through our capture middleware, which means we cannot verify the
+    // signature — reject immediately rather than silently skipping.
+    if (rawBody === undefined) {
+      this.logger.warn('Rejected Slack request — raw body not available for signature verification');
+      throw new UnauthorizedException('Invalid Slack signature');
+    }
+
+    const isValid = this.slackService.verifyRequest(
+      signature,
+      timestamp,
+      rawBody,
+    );
+    if (!isValid) {
+      this.logger.warn('Rejected Slack request — invalid signature');
+      throw new UnauthorizedException('Invalid Slack signature');
     }
 
     if (body.type === 'url_verification') {

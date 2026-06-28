@@ -77,7 +77,7 @@ export class AuthController {
     const result = await this.authService.login(dto);
     res.cookie('admin_token', result.token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: 'strict',
       secure: process.env.NODE_ENV === 'production',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });

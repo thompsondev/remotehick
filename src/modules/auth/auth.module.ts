@@ -10,10 +10,19 @@ import { AdminJwtGuard } from '../../middleware/guards/admin-jwt.guard';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') || 'remote-mvp-dev-secret',
-        signOptions: { expiresIn: '7d' },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>('JWT_SECRET');
+        if (!secret || secret.length < 32) {
+          throw new Error(
+            'JWT_SECRET environment variable is required and must be at least 32 characters. ' +
+              'Set a strong random secret before starting the server.',
+          );
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: '7d' },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

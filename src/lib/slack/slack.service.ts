@@ -128,8 +128,11 @@ export class SlackService {
   ): boolean {
     const signingSecret = process.env.SLACK_SIGNING_SECRET;
     if (!signingSecret) {
-      this.logger.warn('SLACK_SIGNING_SECRET not set — skipping verification');
-      return true;
+      this.logger.error(
+        'SLACK_SIGNING_SECRET not set — rejecting Slack request. ' +
+          'Set SLACK_SIGNING_SECRET to enable Slack webhook verification.',
+      );
+      return false;
     }
 
     const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 300;

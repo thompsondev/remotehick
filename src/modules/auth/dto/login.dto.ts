@@ -13,11 +13,11 @@ export class LoginDto {
   email: string;
 
   @ApiProperty({
-    example: 'admin123',
-    minLength: 6,
+    example: 'MyStr0ngP@ssword!',
+    minLength: 12,
     description: 'Admin account password',
   })
   @IsString()
-  @MinLength(6, { message: 'password must be at least 6 characters' })
+  @MinLength(12, { message: 'password must be at least 12 characters' })
   password: string;
 }

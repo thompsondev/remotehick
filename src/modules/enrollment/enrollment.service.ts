@@ -63,12 +63,17 @@ export class EnrollmentService {
     adminId: string,
     kind: EnrollmentLinkKind = EnrollmentLinkKind.BOTH,
   ) {
-    const ttlHours = Number(
-      this.config.get<string>('ENROLLMENT_LINK_TTL_HOURS') || 0,
+    // Default TTL is 72 hours (3 days) to prevent enrollment links from
+    // living forever. Set ENROLLMENT_LINK_TTL_HOURS=0 only if you explicitly
+    // want non-expiring links (not recommended for production).
+    const configuredTtl = Number(
+      this.config.get<string>('ENROLLMENT_LINK_TTL_HOURS'),
     );
+    const ttlHours = Number.isFinite(configuredTtl) && configuredTtl > 0
+      ? configuredTtl
+      : 72;
     const code = generateEnrollmentCode();
-    const expiresAt =
-      ttlHours > 0 ? new Date(Date.now() + ttlHours * 60 * 60 * 1000) : null;
+    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     const link = await this.prisma.enrollmentLink.create({
       data: {
@@ -177,32 +182,21 @@ export class EnrollmentService {
   }
 
   async validateCode(code: string) {
+    // This endpoint is public — only return the minimum fields needed to
+    // confirm a link is valid. Never expose device metadata (hostname, IP,
+    // OS, etc.) to unauthenticated callers.
     const link = await this.prisma.enrollmentLink.findUnique({
       where: { code },
-      include: {
-        devices: {
-          where: { revokedAt: null },
-          orderBy: { enrolledAt: 'desc' },
-          take: 10,
-          select: LINK_DEVICE_SELECT,
-        },
-      },
     });
     if (!link) return { valid: false, reason: 'not_found' };
     if (link.expiresAt && link.expiresAt < new Date()) {
       return { valid: false, reason: 'expired', expiresAt: link.expiresAt };
     }
 
-    const { agentUrl, instantUrl } = this.buildLinkUrls(code);
     return {
       valid: true,
-      code: link.code,
       kind: link.kind,
       expiresAt: link.expiresAt,
-      agentUrl,
-      instantUrl,
-      deviceCount: link.devices.length,
-      devices: link.devices,
     };
   }
 
@@ -214,6 +208,21 @@ export class EnrollmentService {
       expiresAt: Date | null;
     },
   ) {
+    // Only return server topology (apiUrl, wsUrl) for AGENT or BOTH links.
+    // INSTANT-only links do not need agent bootstrap data and exposing
+    // the internal API/WS URLs to unauthenticated instant-connect clients
+    // is unnecessary information disclosure.
+    if (link.kind === EnrollmentLinkKind.INSTANT) {
+      const { instantUrl } = this.buildLinkUrls(code);
+      return {
+        valid: true as const,
+        code: link.code,
+        kind: link.kind,
+        expiresAt: link.expiresAt,
+        instantUrl,
+      };
+    }
+
     const apiBase =
       this.config.get<string>('PLATFORM_URL')?.replace(/\/$/, '') ||
       'http://localhost:3000';
